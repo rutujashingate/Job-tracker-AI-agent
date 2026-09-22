@@ -2,7 +2,7 @@
 
 from contextlib import redirect_stdout
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 import os
 from pathlib import Path
@@ -13,6 +13,12 @@ from unittest.mock import patch
 from dashboard_data import APPLICATION_COLUMNS, records_to_csv
 from email_importer import build_email_import_plan, classify_job_email
 from gmail_service import build_job_email_query
+from job_discovery import (
+    build_job_discovery_plan,
+    filter_jobs,
+    is_target_role,
+    workday_posted_at,
+)
 from main import commit_proposed_change, request_save_approval
 from storage import empty_database, load_database, save_database
 from tracker import (
@@ -238,6 +244,65 @@ class GmailImportTests(unittest.TestCase):
         query = build_job_email_query(date(2025, 6, 1))
         self.assertIn("after:2025/06/01", query)
         self.assertIn("-hackathon", query)
+
+
+class JobDiscoveryTests(unittest.TestCase):
+    def make_job(self, url, posted_at, **overrides):
+        job = {
+            "id": url.rsplit("/", 1)[-1],
+            "university": "Example University",
+            "role_title": "Software Engineer",
+            "job_family": "Software Development",
+            "location": "Phoenix, AZ",
+            "job_url": url,
+            "date_found": posted_at.date().isoformat(),
+            "date_posted": posted_at.date().isoformat(),
+            "posted_at": posted_at.isoformat(),
+            "sponsorship_status": "unclear",
+            "source": "Official job board",
+            "status": "new",
+        }
+        job.update(overrides)
+        return job
+
+    def test_target_role_matching_excludes_senior_roles(self):
+        self.assertTrue(is_target_role("Junior Software Developer"))
+        self.assertTrue(is_target_role("Associate AI Engineer"))
+        self.assertTrue(is_target_role("Front-end Developer"))
+        self.assertFalse(is_target_role("Senior Software Engineer"))
+        self.assertFalse(is_target_role("Web Developer Supervisor"))
+        self.assertFalse(is_target_role("Financial Analyst"))
+
+    def test_last_24_hours_filter(self):
+        now = datetime.now(timezone.utc)
+        recent = self.make_job("https://example.edu/recent", now - timedelta(hours=2))
+        old = self.make_job("https://example.edu/old", now - timedelta(days=3))
+
+        self.assertEqual(filter_jobs([recent, old], hours=24), [recent])
+
+    def test_discovery_plan_deduplicates_original_posting_urls(self):
+        now = datetime.now(timezone.utc)
+        existing = self.make_job("https://example.edu/job/1", now)
+        new = self.make_job("https://example.edu/job/2", now)
+        database = empty_database()
+        database["job_leads"] = [existing]
+
+        plan = build_job_discovery_plan(database, [existing, new], scanned_at=now)
+
+        self.assertEqual(plan["additions"], [new])
+        self.assertEqual(len(plan["database"]["job_leads"]), 2)
+        self.assertEqual(
+            plan["database"]["job_discovery"]["last_scan_at"],
+            now.isoformat(),
+        )
+
+    def test_workday_relative_posting_date(self):
+        now = datetime(2026, 9, 21, 12, tzinfo=timezone.utc)
+        self.assertEqual(workday_posted_at("Posted Today", now), now)
+        self.assertEqual(
+            workday_posted_at("Posted 3 Days Ago", now),
+            now - timedelta(days=3),
+        )
 
 
 if __name__ == "__main__":

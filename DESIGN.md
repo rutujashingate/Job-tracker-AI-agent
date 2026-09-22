@@ -158,27 +158,35 @@ long-term memory, and approval gates to larger agentic systems.
 ### Dashboard milestone
 
 The local Streamlit UI provides metrics, status and sponsorship charts,
-spreadsheet-style application and outreach tables, in-app reminders, forms,
-approval buttons, and CSV downloads. The JSON document remains the single
-source of truth so the CLI and dashboard use the same approved records.
+spreadsheet-style application and outreach tables, in-app reminders, approval
+buttons, and CSV downloads. The JSON document remains the single source of truth
+so the CLI and dashboard use the same approved records. Applications are added
+from Gmail in the dashboard; the original CLI retains manual entry for the
+assignment exercise.
 
 ### Gmail import milestone
 
-The Settings page starts a local Google OAuth flow that requests Gmail read-only
-access. Inbox Sync searches from June 1, 2025, excludes hackathons, decodes MIME
-messages, classifies job application events, and prepares application additions
-or status updates. Gmail thread IDs provide the strongest match; exact
-university and role provide a conservative fallback. Unmatched messages remain
-in a review list. The scanner stores no message body in the tracker.
+The Connect Gmail page starts a local Google OAuth flow that requests Gmail
+read-only access. Inbox Sync searches from June 1, 2025, excludes hackathons,
+decodes MIME messages, classifies job application events, and prepares
+application additions or status updates. Gmail thread IDs provide the strongest
+match; exact university and role provide a conservative fallback. Unmatched
+messages remain in a review list. The scanner stores no message body in the
+tracker.
 
-### Job Leads milestone
+### Job discovery milestone
 
-The database now has a third logical sheet for jobs found by discovery tools.
-Each lead can store the university, role, location, sponsorship evidence,
-source, and original posting URL. The dashboard displays the table and direct
-links. A public university-job discovery source still needs to populate it.
+The database has a third logical sheet for jobs found before the user applies.
+`job_discovery.py` reads official public RSS, Atom, and Workday sources for seven
+U.S. universities. It filters target early-career technology titles, rejects
+senior and management titles, normalizes dates, and deduplicates by original
+posting URL. The dashboard starts discovery when the Jobs page opens and caches
+results for 30 minutes. It provides age, university, role-group, and text
+filters; direct posting links; charts; CSV export; and an approval gate before
+new leads are written to local JSON.
 
 ### Remaining external integrations
 
-1. Connect public university job discovery and Google Sheets synchronization.
-2. Add approval-gated email drafting and sending with duplicate-contact checks.
+1. Expand discovery beyond the current seven official university sources.
+2. Add Google Sheets synchronization.
+3. Add approval-gated email drafting and sending with duplicate-contact checks.

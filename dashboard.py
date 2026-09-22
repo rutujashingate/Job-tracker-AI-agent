@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 import json
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -24,11 +25,17 @@ from gmail_service import (
     load_credentials,
     scan_gmail_messages,
 )
+from job_discovery import (
+    JOB_SOURCES,
+    build_job_discovery_plan,
+    discover_jobs,
+    filter_jobs,
+    merge_job_leads,
+)
 from storage import get_data_file, load_database, save_database
 from tracker import (
     find_duplicate_contact,
     get_follow_up_reminders,
-    log_application,
     new_outreach_record,
     summarise_pipeline,
     update_status,
@@ -56,6 +63,40 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+NAVIGATION_PAGES = (
+    "Dashboard",
+    "Connect Gmail",
+    "Applications",
+    "Inbox Sync",
+    "Jobs",
+    "Outreach",
+    "Notifications",
+    "Settings",
+)
+
+
+def gmail_connection_warning():
+    """Show the missing-connection message with a direct navigation link."""
+    st.warning(
+        "Gmail is not connected. "
+        "[**Connect Gmail →**](?page=Connect%20Gmail) to import applications "
+        "automatically."
+    )
+
+
+def navigation_changed():
+    """Keep the URL in sync so direct links can select another dashboard view."""
+    selected_page = st.session_state.navigation_page
+    st.query_params["page"] = selected_page
+    st.session_state.query_page_applied = selected_page
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_job_discovery():
+    """Avoid repeatedly requesting university feeds during UI reruns."""
+    return discover_jobs()
 
 
 def initialize_state():
@@ -166,7 +207,7 @@ def gmail_connection_page():
             st.rerun()
         return
 
-    st.warning("Gmail is not connected.")
+    st.warning("Complete the Gmail setup below to authorize inbox scanning.")
     client_file = credentials_file()
     if not client_file.exists():
         st.subheader("First-time OAuth setup")
@@ -230,10 +271,7 @@ def dashboard_page(database):
     except Exception:
         gmail_connected = False
     if not gmail_connected:
-        st.warning(
-            "Gmail is not connected. Select **Connect Gmail** in the left "
-            "navigation to import applications automatically."
-        )
+        gmail_connection_warning()
     applications = database["applications"]
     summary = summarise_pipeline(applications)
     reminders = get_follow_up_reminders(applications)
@@ -299,12 +337,24 @@ def dashboard_page(database):
 
 
 def applications_page(database):
-    """Display, export, add, and update application records."""
+    """Display Gmail-detected applications and allow status corrections."""
     st.title("Applications")
     if render_approval_gate():
         st.stop()
 
     applications = database["applications"]
+    try:
+        gmail_connected = load_credentials() is not None
+    except Exception:
+        gmail_connected = False
+    if gmail_connected:
+        st.info(
+            "Applications are added automatically from confirmation emails. "
+            "[**Scan Gmail now →**](?page=Inbox%20Sync)"
+        )
+    else:
+        gmail_connection_warning()
+
     st.dataframe(
         applications_frame(applications),
         hide_index=True,
@@ -317,45 +367,8 @@ def applications_page(database):
         mime="text/csv",
     )
 
-    with st.expander("Log an application", expanded=not applications):
-        with st.form("add_application"):
-            university = st.text_input("University name")
-            role = st.text_input("Role title")
-            applied = st.date_input("Date applied", value=date.today())
-            status = st.selectbox("Status", STATUSES)
-            job_id = st.text_input("Job ID")
-            location = st.text_input("Location")
-            job_url = st.text_input("Job URL")
-            sponsorship = st.selectbox("Sponsorship status", SPONSORSHIP_STATUSES, index=2)
-            stem_evidence = st.text_area("STEM OPT evidence")
-            h1b_evidence = st.text_area("H-1B evidence")
-            notes = st.text_area("Notes")
-            submitted = st.form_submit_button("Review application")
-
-        if submitted:
-            proposed = deepcopy(database)
-            try:
-                application = log_application(
-                    proposed["applications"],
-                    university,
-                    role,
-                    applied.isoformat(),
-                    status,
-                    notes,
-                    job_id=job_id,
-                    location=location,
-                    job_url=job_url,
-                    sponsorship_status=sponsorship,
-                    stem_opt_evidence=stem_evidence,
-                    h1b_evidence=h1b_evidence,
-                )
-            except ValueError as exc:
-                st.error(exc)
-            else:
-                stage_change("add_application", proposed, {"application": application})
-
     if applications:
-        with st.expander("Update application status"):
+        with st.expander("Correct a detected status"):
             application_map = {application["id"]: application for application in applications}
             with st.form("update_status"):
                 application_id = st.selectbox(
@@ -462,7 +475,7 @@ def inbox_sync_page(database):
         st.error(f"The Gmail connection needs attention: {exc}")
         return
     if credentials is None:
-        st.warning("Gmail is not connected. Open Connect Gmail from the sidebar.")
+        gmail_connection_warning()
         return
 
     try:
@@ -564,36 +577,199 @@ def inbox_sync_page(database):
         )
 
 
+def _render_job_charts(job_leads):
+    """Show the university mix and posting activity for filtered jobs."""
+    if not job_leads:
+        return
+    chart_data = pd.DataFrame(job_leads)
+    university_counts = (
+        chart_data.groupby("university", as_index=False)
+        .size()
+        .rename(columns={"size": "jobs"})
+        .sort_values("jobs", ascending=False)
+    )
+    posting_counts = (
+        chart_data.groupby("date_posted", as_index=False)
+        .size()
+        .rename(columns={"size": "jobs"})
+        .sort_values("date_posted")
+    )
+
+    university_column, timeline_column = st.columns(2)
+    with university_column:
+        st.subheader("Jobs by university")
+        university_chart = (
+            alt.Chart(university_counts)
+            .mark_arc(innerRadius=55)
+            .encode(
+                theta=alt.Theta("jobs:Q"),
+                color=alt.Color("university:N", title="University"),
+                tooltip=["university:N", "jobs:Q"],
+            )
+            .properties(height=330)
+        )
+        st.altair_chart(university_chart, width="stretch")
+
+    with timeline_column:
+        st.subheader("Jobs by posting date")
+        timeline_chart = (
+            alt.Chart(posting_counts)
+            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+            .encode(
+                x=alt.X("date_posted:T", title="Date posted"),
+                y=alt.Y("jobs:Q", title="Jobs"),
+                tooltip=["date_posted:T", "jobs:Q"],
+            )
+            .properties(height=330)
+        )
+        st.altair_chart(timeline_chart, width="stretch")
+
+
 def job_leads_page(database):
-    """Display jobs found by future discovery connectors."""
-    st.title("Job leads")
-    st.caption("Matching jobs appear here before you apply.")
-    job_leads = database.get("job_leads", [])
-    st.dataframe(
-        job_leads_frame(job_leads),
-        hide_index=True,
+    """Discover, filter, chart, export, and approval-save current job leads."""
+    st.title("Jobs found for you")
+    st.caption(
+        "Early career software, frontend, UI, and AI roles from official "
+        "university job boards."
+    )
+    if render_approval_gate():
+        st.stop()
+
+    refresh_column, source_column = st.columns([1, 3])
+    refresh_requested = refresh_column.button(
+        "Refresh jobs now",
+        type="primary",
         width="stretch",
     )
-    st.download_button(
-        "Download job leads CSV",
-        records_to_csv(job_leads, JOB_LEAD_COLUMNS),
-        file_name="job_leads.csv",
-        mime="text/csv",
+    source_column.caption(
+        f"Scanning {len(JOB_SOURCES)} official sources · results cached for 30 minutes"
+    )
+    if refresh_requested:
+        cached_job_discovery.clear()
+
+    try:
+        with st.spinner("Searching official university job boards..."):
+            discovered_jobs, source_errors = cached_job_discovery()
+    except Exception as exc:
+        discovered_jobs, source_errors = [], []
+        st.error(f"Job discovery could not run: {exc}")
+
+    saved_jobs = database.get("job_leads", [])
+    all_jobs, new_jobs = merge_job_leads(saved_jobs, discovered_jobs)
+    if source_errors:
+        with st.expander(f"{len(source_errors)} source warning(s)"):
+            for error in source_errors:
+                st.warning(f"{error['source']}: {error['error']}")
+
+    time_options = {
+        "Last 24 hours": 24,
+        "Last 3 days": 72,
+        "Last 7 days": 168,
+        "Last 30 days": 720,
+        "Any time": None,
+    }
+    universities = sorted(
+        {lead.get("university", "") for lead in all_jobs if lead.get("university")}
+    )
+    families = sorted(
+        {lead.get("job_family", "") for lead in all_jobs if lead.get("job_family")}
+    )
+    filter_columns = st.columns((1, 1.5, 1.25, 1.25))
+    time_label = filter_columns[0].selectbox(
+        "Posted",
+        tuple(time_options),
+        index=3,
+    )
+    keyword = filter_columns[1].text_input(
+        "Search",
+        placeholder="Title, university, or location",
+    )
+    selected_universities = filter_columns[2].multiselect(
+        "Universities",
+        universities,
+    )
+    selected_families = filter_columns[3].multiselect(
+        "Role groups",
+        families,
+    )
+    filtered_jobs = filter_jobs(
+        all_jobs,
+        hours=time_options[time_label],
+        universities=selected_universities,
+        families=selected_families,
+        query=keyword,
     )
 
-    if not job_leads:
-        st.info(
-            "No job-discovery source is connected yet. The next discovery "
-            "milestone will search public university career pages."
-        )
-        return
+    last_day_count = len(filter_jobs(all_jobs, hours=24))
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("Matching jobs", len(filtered_jobs))
+    metric_columns[1].metric("Posted in 24h", last_day_count)
+    metric_columns[2].metric(
+        "Universities",
+        len({job.get("university") for job in filtered_jobs}),
+    )
+    metric_columns[3].metric("New this scan", len(new_jobs))
 
-    st.subheader("Original postings")
-    for lead in job_leads:
-        st.markdown(f"**{lead['role_title']}** · {lead['university']}")
-        st.write(lead.get("location", ""))
-        if lead.get("job_url"):
-            st.link_button("Open original posting", lead["job_url"])
+    _render_job_charts(filtered_jobs)
+
+    st.subheader("Job postings")
+    if filtered_jobs:
+        display_columns = (
+            "role_title",
+            "university",
+            "job_family",
+            "location",
+            "date_posted",
+            "sponsorship_status",
+            "job_url",
+        )
+        st.dataframe(
+            pd.DataFrame(filtered_jobs).reindex(columns=display_columns),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "role_title": "Role",
+                "university": "University",
+                "job_family": "Role group",
+                "location": "Location",
+                "date_posted": st.column_config.DateColumn("Posted"),
+                "sponsorship_status": "Sponsorship",
+                "job_url": st.column_config.LinkColumn(
+                    "Original posting",
+                    display_text="Apply / view",
+                ),
+            },
+        )
+    else:
+        st.info("No jobs match the selected filters. Try a wider posting period.")
+
+    action_column, download_column = st.columns(2)
+    if new_jobs:
+        if action_column.button(
+            f"Review and save {len(new_jobs)} new jobs",
+            type="primary",
+            width="stretch",
+        ):
+            plan = build_job_discovery_plan(database, discovered_jobs)
+            stage_change(
+                "save_discovered_jobs",
+                plan["database"],
+                {"new_job_leads": plan["additions"]},
+            )
+    else:
+        action_column.success("All discovered jobs are already saved.")
+    download_column.download_button(
+        "Download filtered jobs CSV",
+        records_to_csv(filtered_jobs, JOB_LEAD_COLUMNS),
+        file_name="job_leads.csv",
+        mime="text/csv",
+        width="stretch",
+    )
+
+    st.caption(
+        "Sponsorship remains unclear until a posting explicitly confirms it. "
+        "Always verify STEM OPT and H-1B eligibility on the original posting."
+    )
 
 
 def notifications_page(database):
@@ -620,7 +796,7 @@ def notifications_page(database):
             "Sending email is still disabled and will require a separate scope."
         )
     else:
-        st.info("Open Connect Gmail from the sidebar to authorize inbox scanning.")
+        gmail_connection_warning()
 
 
 def settings_page(database):
@@ -697,7 +873,7 @@ def settings_page(database):
             st.success("Connected read-only")
         else:
             st.error("Not connected")
-        st.write("Use the clearly labeled **Connect Gmail** page in the sidebar.")
+        st.markdown("[**Connect Gmail →**](?page=Connect%20Gmail)")
         st.caption("Requested Gmail permission: read-only.")
     with connection_columns[1]:
         st.markdown("**Google Sheets**")
@@ -717,20 +893,21 @@ def settings_page(database):
 initialize_state()
 show_flash_message()
 
+requested_page = st.query_params.get("page")
+if (
+    requested_page in NAVIGATION_PAGES
+    and st.session_state.get("query_page_applied") != requested_page
+):
+    st.session_state.navigation_page = requested_page
+    st.session_state.query_page_applied = requested_page
+
 with st.sidebar:
     st.title("🎓 Job Tracker")
     page = st.radio(
         "Navigation",
-        (
-            "Dashboard",
-            "Connect Gmail",
-            "Applications",
-            "Inbox Sync",
-            "Job Leads",
-            "Outreach",
-            "Notifications",
-            "Settings",
-        ),
+        NAVIGATION_PAGES,
+        key="navigation_page",
+        on_change=navigation_changed,
     )
     if st.button("Reload saved data", width="stretch"):
         try:
@@ -750,7 +927,7 @@ elif page == "Applications":
     applications_page(database)
 elif page == "Inbox Sync":
     inbox_sync_page(database)
-elif page == "Job Leads":
+elif page == "Jobs":
     job_leads_page(database)
 elif page == "Outreach":
     outreach_page(database)

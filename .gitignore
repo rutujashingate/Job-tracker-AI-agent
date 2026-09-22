@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments and local secrets
+.venv/
+venv/
+.env
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+
+# Private job application data
+data/applications.json

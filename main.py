@@ -35,7 +35,9 @@ def main():
     print(f"  Application goal: {search_goal['application_goal']}")
     print(f"  Deadline: {session_state['deadline']}")
     print(f"  Weekly hours: {search_goal['weekly_hours']}")
+    print(f"  Sponsorship needs: {', '.join(search_goal['sponsorship_needs'])}")
     print(f"  Applications tracked: {session_state['application_count']}")
+    print(f"  Hiring contacts emailed: {session_state['outreach_count']}")
     print("Nothing has been saved yet. Approval and saving come in a later step.")
 
 

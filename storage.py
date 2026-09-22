@@ -8,4 +8,8 @@ DATA_FILE = Path(__file__).parent / "data" / "applications.json"
 
 def empty_database():
     """Return the shape that the saved JSON document will use."""
-    return {"search_goal": None, "applications": []}
+    return {
+        "search_goal": None,
+        "applications": [],
+        "outreach_history": [],
+    }

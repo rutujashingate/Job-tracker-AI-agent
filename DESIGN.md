@@ -1,43 +1,114 @@
-# Job Application Tracker: design
+# University Job Search Assistant: design
 
-## Assistant role
+## Step 1: role and boundaries
 
-The assistant helps a job seeker set an application goal, record applications,
-track their statuses, and identify when a follow-up is due. It asks for missing
-information before proposing an action. It may read local data and show a
-summary without approval. Before it changes the local JSON file, it shows the
-exact proposed change and asks for an explicit confirmation. It does not submit
-applications or send messages on the user's behalf.
+### Assistant role
 
-## Search goal inputs
+The assistant helps an international candidate find junior technology jobs at
+universities across the United States. Its target roles are Junior Software
+Developer, UI Developer, Frontend Developer, and AI Engineer. It prioritizes
+roles with evidence relevant to STEM OPT and future H-1B sponsorship.
 
-- Target role type
-- Target company size or industry
+The assistant can:
+
+- find matching jobs on public university career pages;
+- capture the source URL and the sponsorship evidence it found;
+- detect application confirmations and status changes from relevant emails;
+- track applications, statuses, and seven-day follow-up reminders;
+- find public professional contact information for a hiring team;
+- draft outreach and follow-up emails; and
+- maintain an outreach history so the same person is not contacted twice.
+
+The assistant does not assume that a discovered job has been applied to. It
+does not claim that sponsorship is available when the source is unclear. It
+does not add or change tracker rows, submit applications, or send email without
+showing the proposed action and receiving explicit approval.
+
+### Required search-goal inputs
+
+- Target role types
+- Employer focus (U.S. universities)
+- Sponsorship needs (STEM OPT and future H-1B)
 - Number of applications to submit
 - Deadline (YYYY-MM-DD; today or a future date)
 - Weekly availability in hours
 
-## Application record
+### Approval gates
 
-Each application has a unique ID, company name, role title, date applied,
-status, and notes. Allowed statuses are `applied`, `interviewing`, `offer`,
-`rejected`, and `withdrawn`.
+The following actions always require confirmation:
 
-## Approval rules
+- adding an application detected from email;
+- changing an application status or notes;
+- deleting an application;
+- adding or editing an outreach-history entry;
+- emailing a hiring contact; and
+- contacting an email address that already appears in outreach history.
 
-Every change to saved data needs approval, including setting or editing the
-search goal, adding an application, changing a status, editing notes, and
-deleting a record. The assistant previews the proposed change first. It saves
-only after `yes`, `confirm`, or `save`; an unclear response causes another
-prompt. Viewing the pipeline and calculating a follow-up date do not change
-saved data.
+Before an approved write, the assistant shows the exact fields that will be
+saved. Before an approved email, it shows the recipient, subject, and complete
+message. It accepts `yes`, `confirm`, or `save` for data writes and `send` for
+email. An unclear response such as `maybe` causes another prompt.
 
-The default follow-up date is seven days after the application date. This is
-a reminder calculation, not an automatic email.
+Reading data, searching public job pages, calculating reminders, checking for
+duplicate contacts, and displaying summaries do not require approval.
 
-## Learning milestones
+## Step 2: data model
 
-1. Define the role, data model, and validation rules.
-2. Add tracker functions and an interactive CLI.
-3. Add approval gates and JSON persistence.
+The tracker has two logical sheets. They are represented as two lists in local
+JSON first and can later be synchronized to two tabs in a spreadsheet.
+
+### Applications sheet
+
+Each application contains:
+
+- `id`
+- `company_name` (the university employer)
+- `role_title`
+- `job_id`
+- `location`
+- `job_url`
+- `date_applied`
+- `status` (`applied`, `interviewing`, `offer`, `rejected`, or `withdrawn`)
+- `sponsorship_status` (`confirmed`, `not_available`, or `unclear`)
+- `stem_opt_evidence`
+- `h1b_evidence`
+- `source_email_id`
+- `last_email_date`
+- `follow_up_date`
+- `notes`
+
+An email-derived application remains a proposed record until the user approves
+it. The source email ID lets the assistant avoid importing the same message
+twice.
+
+### Outreach history sheet
+
+Each outreach entry contains:
+
+- `id`
+- `contact_name`
+- `email_address`
+- `company_name`
+- `role_title`
+- `application_id`
+- `email_subject`
+- `message_body`
+- `date_sent`
+- `reply_status`
+- `follow_up_date`
+
+Email addresses are stored in lowercase for duplicate checks. A previous entry
+blocks another send unless the user explicitly approves an override.
+
+### Session state
+
+During one run, `session_state` holds the search goal, deadline, application
+count, outreach count, current pipeline, pending action, and last completed
+action. The saved JSON is the long-term memory; session state is working memory.
+
+## Later milestones
+
+1. Build tracker helper functions and the interactive CLI.
+2. Add approval gates and local JSON persistence.
+3. Connect job discovery, email reading, and the two spreadsheet tabs.
 4. Test edge cases, document the program, and prepare a portfolio repository.

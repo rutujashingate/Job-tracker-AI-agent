@@ -17,7 +17,7 @@ def empty_database():
     }
 
 
-def _data_file(path=None):
+def get_data_file(path=None):
     """Resolve the normal data path or an explicit testing override."""
     if path is not None:
         return Path(path)
@@ -27,7 +27,7 @@ def _data_file(path=None):
 
 def load_database(path=None):
     """Load saved tracker data, or return a new database when no file exists."""
-    file_path = _data_file(path)
+    file_path = get_data_file(path)
     if not file_path.exists():
         return empty_database()
 
@@ -59,7 +59,7 @@ def save_database(database, approved=False, path=None):
     if approved is not True:
         raise PermissionError("Saving requires explicit user approval.")
 
-    file_path = _data_file(path)
+    file_path = get_data_file(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = file_path.with_suffix(f"{file_path.suffix}.tmp")
     with temporary_path.open("w", encoding="utf-8") as file:

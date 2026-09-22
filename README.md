@@ -1,9 +1,9 @@
 # University Job Application Tracker
 
-A beginner-friendly Python command-line app that tracks university job
-applications for an international candidate seeking STEM OPT and future H-1B
-sponsorship. It demonstrates agentic thinking through goals, state, tools,
-validation, human approval, and local memory.
+A beginner-friendly Python app with a visual dashboard and command-line mode.
+It tracks university job applications for an international candidate seeking
+STEM OPT and future H-1B sponsorship. It demonstrates agentic thinking through
+goals, state, tools, validation, human approval, and local memory.
 
 ## Current features
 
@@ -17,6 +17,8 @@ validation, human approval, and local memory.
 - Previews every proposed data change and requires explicit approval.
 - Saves approved changes to local JSON and reloads them on the next run.
 - Includes an outreach-history data model for future duplicate-email checks.
+- Provides a dashboard with metrics, charts, tables, and in-app reminders.
+- Exports Applications and Outreach History as separate CSV sheets.
 
 ## Agent workflow
 
@@ -41,6 +43,8 @@ Display the current pipeline
 ```text
 .
 ├── main.py             # Interactive command-line interface and approval gate
+├── dashboard.py        # Streamlit dashboard, tables, charts, and forms
+├── dashboard_data.py   # Stable CSV export helpers
 ├── tracker.py          # Application, status, summary, and reminder tools
 ├── validation.py       # Input rules and normalization
 ├── storage.py          # Approved JSON loading and atomic saving
@@ -55,9 +59,30 @@ Display the current pipeline
 ## Requirements
 
 - Python 3.9 or newer
-- No third-party packages
+- Streamlit 1.50 and pandas for the dashboard
 
-## Run the app
+## Run the dashboard
+
+Create a virtual environment and install the UI dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Start the dashboard:
+
+```bash
+streamlit run dashboard.py
+```
+
+Streamlit opens the local app in your browser. Use **Settings** to configure the
+search goal, **Applications** to track jobs, **Outreach** to prevent duplicate
+contact, and **Notifications** to see reminders. Each write is staged for
+approval before the JSON file changes.
+
+## Run the command-line app
 
 From the project directory:
 
@@ -113,7 +138,7 @@ date, follow-up date, job details, sponsorship evidence, and notes.
 python3 -m unittest discover -s tests -v
 ```
 
-The tests cover the normal application workflow, empty company names, invalid
+The tests cover the normal application workflow, CSV export, empty company names, invalid
 statuses, past deadlines, vague approval responses, cancelled writes, approved
 persistence, and malformed JSON.
 
@@ -126,7 +151,8 @@ private job-search information. `.env` is also excluded for future API secrets.
 
 - Job discovery is still manual.
 - Gmail application detection is not connected yet.
-- The two data collections are local JSON lists rather than Google Sheet tabs.
+- The two tables can be downloaded as CSV but are not synchronized to Google
+  Sheets yet.
 - The app prepares outreach-history records but does not send email yet.
 - Sponsorship evidence is entered by the user and should be verified against
   the employer's current job posting and policies.
@@ -139,3 +165,11 @@ private job-search information. `.env` is also excluded for future API secrets.
 3. Synchronize applications and outreach history to two Google Sheet tabs.
 4. Draft hiring-team emails, check for duplicate contacts, and send only after
    the user approves the exact recipient, subject, and message.
+
+## Connecting an email account
+
+Typing an email address into the dashboard does not grant mailbox access. Gmail
+integration will use Google OAuth: the dashboard opens Google's account chooser,
+you select the Gmail account, and Google returns a limited access token. Never
+put a Gmail password in this repository. OAuth credential and token files are
+excluded by `.gitignore`.

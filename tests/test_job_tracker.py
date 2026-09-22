@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from dashboard_data import APPLICATION_COLUMNS, records_to_csv
 from main import commit_proposed_change, request_save_approval
 from storage import empty_database, load_database, save_database
 from tracker import (
@@ -150,6 +151,26 @@ class StorageTests(unittest.TestCase):
             path.write_text("not valid json", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "not valid JSON"):
                 load_database(path)
+
+
+class CsvExportTests(unittest.TestCase):
+    def test_application_records_export_with_stable_headers(self):
+        csv_text = records_to_csv(
+            [
+                {
+                    "id": "application-1",
+                    "company_name": "Example University",
+                    "role_title": "Junior Developer",
+                    "status": "applied",
+                }
+            ],
+            APPLICATION_COLUMNS,
+        )
+
+        lines = csv_text.splitlines()
+        self.assertEqual(lines[0].split(","), list(APPLICATION_COLUMNS))
+        self.assertIn("Example University", lines[1])
+        self.assertIn("Junior Developer", lines[1])
 
 
 if __name__ == "__main__":

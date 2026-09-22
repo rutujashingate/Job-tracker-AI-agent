@@ -152,5 +152,14 @@ long-term memory, and approval gates to larger agentic systems.
 
 ## Planned extensions
 
-1. Connect job discovery, email reading, and the two spreadsheet tabs.
+### Dashboard milestone
+
+The local Streamlit UI provides metrics, status and sponsorship charts,
+spreadsheet-style application and outreach tables, in-app reminders, forms,
+approval buttons, and CSV downloads. The JSON document remains the single
+source of truth so the CLI and dashboard use the same approved records.
+
+### External integrations
+
+1. Connect job discovery, Gmail reading, and the two Google Sheet tabs.
 2. Add approval-gated email drafting and sending with duplicate-contact checks.

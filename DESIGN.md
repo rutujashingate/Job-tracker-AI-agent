@@ -141,7 +141,16 @@ current file in one operation. It also rejects calls that do not carry an
 explicit approval flag. The live in-memory database changes only after the
 write succeeds. The CLI reports the path after each successful save.
 
-## Later milestones
+## Step 5: test, document, and reflect
+
+The automated suite covers the normal application workflow, empty university
+names, unsupported statuses, past deadlines, unclear approval responses,
+cancelled changes, approved persistence, unapproved storage calls, and invalid
+JSON. The README explains setup, usage, an example interaction, privacy, and
+current limitations. The reflection connects helper functions, session state,
+long-term memory, and approval gates to larger agentic systems.
+
+## Planned extensions
 
 1. Connect job discovery, email reading, and the two spreadsheet tabs.
-2. Test edge cases, document the program, and prepare a portfolio repository.
+2. Add approval-gated email drafting and sending with duplicate-contact checks.

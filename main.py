@@ -54,9 +54,15 @@ def request_save_approval(action, change, input_func=input):
         print("Please enter a clear decision: yes, confirm, save, no, or cancel.")
 
 
-def commit_proposed_change(database, proposed_database, action, change):
+def commit_proposed_change(
+    database,
+    proposed_database,
+    action,
+    change,
+    input_func=input,
+):
     """Save a proposed database and adopt it only after user approval."""
-    if not request_save_approval(action, change):
+    if not request_save_approval(action, change, input_func=input_func):
         print("Change cancelled. Nothing was saved.")
         return False
 

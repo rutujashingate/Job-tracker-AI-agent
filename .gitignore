@@ -9,6 +9,7 @@ venv/
 .env
 credentials.json
 token.json
+data/gmail_token.json
 .streamlit/secrets.toml
 
 # Editor and operating-system files

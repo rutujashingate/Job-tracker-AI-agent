@@ -9,8 +9,19 @@ import streamlit as st
 
 from dashboard_data import (
     APPLICATION_COLUMNS,
+    JOB_LEAD_COLUMNS,
     OUTREACH_COLUMNS,
     records_to_csv,
+)
+from email_importer import build_email_import_plan, classify_messages
+from gmail_service import (
+    build_gmail_service,
+    connect_gmail,
+    credentials_file,
+    disconnect_gmail,
+    gmail_profile,
+    load_credentials,
+    scan_gmail_messages,
 )
 from storage import get_data_file, load_database, save_database
 from tracker import (
@@ -55,6 +66,7 @@ def initialize_state():
             st.error(f"The saved tracker could not be loaded: {exc}")
             st.stop()
     st.session_state.setdefault("pending_change", None)
+    st.session_state.setdefault("gmail_scan_plan", None)
 
 
 def stage_change(action, proposed_database, change):
@@ -88,6 +100,8 @@ def render_approval_gate():
         else:
             st.session_state.database = pending["database"]
             st.session_state.pending_change = None
+            if pending["action"] == "gmail_import":
+                st.session_state.gmail_scan_plan = None
             st.session_state.flash_message = f"Saved successfully to {path}."
             st.rerun()
     if cancel_column.button("Cancel", width="stretch"):
@@ -112,6 +126,11 @@ def applications_frame(applications):
 def outreach_frame(outreach_history):
     """Build a consistently ordered outreach-history table."""
     return pd.DataFrame(outreach_history, columns=OUTREACH_COLUMNS)
+
+
+def job_leads_frame(job_leads):
+    """Build a consistently ordered discovered-jobs table."""
+    return pd.DataFrame(job_leads, columns=JOB_LEAD_COLUMNS)
 
 
 def dashboard_page(database):
@@ -334,6 +353,152 @@ def outreach_page(database):
                     stage_change("add_outreach_record", proposed, {"outreach": record})
 
 
+def inbox_sync_page(database):
+    """Scan Gmail and stage detected application changes for approval."""
+    st.title("Gmail application sync")
+    if render_approval_gate():
+        st.stop()
+
+    try:
+        credentials = load_credentials()
+    except Exception as exc:
+        st.error(f"The Gmail connection needs attention: {exc}")
+        return
+    if credentials is None:
+        st.warning("Gmail is not connected. Connect it from Settings first.")
+        return
+
+    try:
+        service = build_gmail_service(credentials)
+        profile = gmail_profile(service)
+    except Exception as exc:
+        st.error(f"Gmail could not be reached: {exc}")
+        return
+
+    st.success(f"Connected read-only to {profile.get('emailAddress', 'Gmail')}.")
+    sync_state = database.get("email_sync", {})
+    stored_start = sync_state.get("start_date", "2025-06-01")
+    start_date = st.date_input(
+        "Scan application emails beginning",
+        value=date.fromisoformat(stored_start),
+    )
+    st.caption(
+        "The search excludes hackathons. Local classification keeps job "
+        "application confirmations, interviews, offers, withdrawals, and rejections."
+    )
+
+    if st.button("Scan Gmail", type="primary"):
+        try:
+            with st.spinner("Reading and classifying matching Gmail messages..."):
+                messages = scan_gmail_messages(service, start_date)
+                detections = classify_messages(messages)
+                plan = build_email_import_plan(database, detections)
+                plan["messages_scanned"] = len(messages)
+                plan["detections_found"] = len(detections)
+                plan["start_date"] = start_date.isoformat()
+                plan["database"]["email_sync"]["start_date"] = start_date.isoformat()
+                st.session_state.gmail_scan_plan = plan
+        except Exception as exc:
+            st.error(f"The Gmail scan failed: {exc}")
+        else:
+            st.rerun()
+
+    plan = st.session_state.gmail_scan_plan
+    if plan is None:
+        last_scan = sync_state.get("last_scan_at")
+        if last_scan:
+            st.info(f"Last approved scan: {last_scan}")
+        return
+
+    metric_columns = st.columns(3)
+    metric_columns[0].metric("Messages scanned", plan["messages_scanned"])
+    metric_columns[1].metric("Job emails detected", plan["detections_found"])
+    metric_columns[2].metric("Changes ready", len(plan["changes"]))
+
+    if plan["changes"]:
+        preview_rows = []
+        for change in plan["changes"]:
+            after = change["after"]
+            preview_rows.append(
+                {
+                    "action": change["action"],
+                    "university": after["company_name"],
+                    "role": after["role_title"],
+                    "status": after["status"],
+                    "email_date": after.get("last_email_date", ""),
+                }
+            )
+        st.subheader("Detected changes")
+        st.dataframe(
+            pd.DataFrame(preview_rows),
+            hide_index=True,
+            width="stretch",
+        )
+        if st.button("Review and approve detected changes", type="primary"):
+            stage_change(
+                "gmail_import",
+                plan["database"],
+                {"email_changes": plan["changes"]},
+            )
+    else:
+        st.info("No new application records or matched status changes were found.")
+
+    if plan["unmatched"]:
+        st.subheader("Needs review")
+        st.warning(
+            "These job-related emails could not be matched safely. They were not "
+            "written to the tracker."
+        )
+        unmatched_rows = [
+            {
+                "subject": detection["subject"],
+                "sender": detection["sender_address"],
+                "email_date": detection["received_date"],
+                "detected_status": detection["detected_status"],
+                "suggested_university": detection["company_name"],
+                "suggested_role": detection["role_title"],
+            }
+            for detection in plan["unmatched"]
+        ]
+        st.dataframe(
+            pd.DataFrame(unmatched_rows),
+            hide_index=True,
+            width="stretch",
+        )
+
+
+def job_leads_page(database):
+    """Display jobs found by future discovery connectors."""
+    st.title("Job leads")
+    st.caption("Matching jobs appear here before you apply.")
+    job_leads = database.get("job_leads", [])
+    st.dataframe(
+        job_leads_frame(job_leads),
+        hide_index=True,
+        width="stretch",
+    )
+    st.download_button(
+        "Download job leads CSV",
+        records_to_csv(job_leads, JOB_LEAD_COLUMNS),
+        file_name="job_leads.csv",
+        mime="text/csv",
+    )
+
+    if not job_leads:
+        st.info(
+            "No job-discovery source is connected yet. The next discovery "
+            "milestone will search public university career pages."
+        )
+        return
+
+    st.subheader("Original postings")
+    for lead in job_leads:
+        st.markdown(f"**{lead['role_title']}** · {lead['university']}")
+        st.write(lead.get("location", ""))
+        if lead.get("job_url"):
+            st.link_button("Open original posting", lead["job_url"])
+
+
 def notifications_page(database):
     """Display in-app reminders and explain future email notifications."""
     st.title("Notifications")
@@ -348,10 +513,17 @@ def notifications_page(database):
         st.success("You have no follow-up reminders due today.")
 
     st.subheader("Email notifications")
-    st.info(
-        "Gmail is not connected yet. The next milestone will add a Google OAuth "
-        "connection before the dashboard can read or send email."
-    )
+    try:
+        credentials = load_credentials()
+    except Exception:
+        credentials = None
+    if credentials:
+        st.info(
+            "Gmail is connected with read-only access for application tracking. "
+            "Sending email is still disabled and will require a separate scope."
+        )
+    else:
+        st.info("Connect Gmail from Settings to scan application-status email.")
 
 
 def settings_page(database):
@@ -420,12 +592,45 @@ def settings_page(database):
     connection_columns = st.columns(2)
     with connection_columns[0]:
         st.markdown("**Gmail**")
-        st.error("Not connected")
-        st.write(
-            "Gmail will use Google OAuth. You will choose your account in "
-            "Google's sign-in window and will not enter a password in this app."
-        )
-        st.button("Connect Gmail — coming next", disabled=True)
+        try:
+            gmail_credentials = load_credentials()
+        except Exception as exc:
+            gmail_credentials = None
+            st.error(f"Stored Gmail authorization could not be loaded: {exc}")
+
+        if gmail_credentials:
+            try:
+                profile = gmail_profile(build_gmail_service(gmail_credentials))
+            except Exception as exc:
+                st.error(f"Gmail could not be reached: {exc}")
+            else:
+                st.success(f"Connected read-only: {profile.get('emailAddress', 'Gmail')}")
+            if st.button("Disconnect Gmail"):
+                disconnect_gmail()
+                st.session_state.gmail_scan_plan = None
+                st.rerun()
+        else:
+            st.error("Not connected")
+            st.write(
+                "Select Connect Gmail, then choose your account in Google's "
+                "browser window. Do not enter a Gmail password in this app."
+            )
+            if credentials_file().exists():
+                if st.button("Connect Gmail", type="primary"):
+                    try:
+                        with st.spinner("Waiting for Google authorization..."):
+                            connect_gmail()
+                    except Exception as exc:
+                        st.error(f"Gmail authorization failed: {exc}")
+                    else:
+                        st.rerun()
+            else:
+                st.warning(
+                    "OAuth setup is required first. Download the Google OAuth "
+                    f"desktop client file to: {credentials_file()}"
+                )
+                st.button("Connect Gmail", disabled=True)
+        st.caption("Requested Gmail permission: read-only.")
     with connection_columns[1]:
         st.markdown("**Google Sheets**")
         st.error("Not connected")
@@ -448,7 +653,15 @@ with st.sidebar:
     st.title("🎓 Job Tracker")
     page = st.radio(
         "Navigation",
-        ("Dashboard", "Applications", "Outreach", "Notifications", "Settings"),
+        (
+            "Dashboard",
+            "Applications",
+            "Inbox Sync",
+            "Job Leads",
+            "Outreach",
+            "Notifications",
+            "Settings",
+        ),
     )
     if st.button("Reload saved data", width="stretch"):
         try:
@@ -464,6 +677,10 @@ if page == "Dashboard":
     dashboard_page(database)
 elif page == "Applications":
     applications_page(database)
+elif page == "Inbox Sync":
+    inbox_sync_page(database)
+elif page == "Job Leads":
+    job_leads_page(database)
 elif page == "Outreach":
     outreach_page(database)
 elif page == "Notifications":

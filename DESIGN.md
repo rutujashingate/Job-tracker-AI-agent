@@ -54,8 +54,9 @@ duplicate contacts, and displaying summaries do not require approval.
 
 ## Step 2: data model
 
-The tracker has two logical sheets. They are represented as two lists in local
-JSON first and can later be synchronized to two tabs in a spreadsheet.
+The tracker began with Applications and Outreach History. It now also contains
+Job Leads for roles found before the user applies. These collections live in
+local JSON first and can later be synchronized to spreadsheet tabs.
 
 ### Applications sheet
 
@@ -73,6 +74,8 @@ Each application contains:
 - `stem_opt_evidence`
 - `h1b_evidence`
 - `source_email_id`
+- `source_thread_id`
+- `last_status_email_id`
 - `last_email_date`
 - `follow_up_date`
 - `notes`
@@ -159,7 +162,23 @@ spreadsheet-style application and outreach tables, in-app reminders, forms,
 approval buttons, and CSV downloads. The JSON document remains the single
 source of truth so the CLI and dashboard use the same approved records.
 
-### External integrations
+### Gmail import milestone
 
-1. Connect job discovery, Gmail reading, and the two Google Sheet tabs.
+The Settings page starts a local Google OAuth flow that requests Gmail read-only
+access. Inbox Sync searches from June 1, 2025, excludes hackathons, decodes MIME
+messages, classifies job application events, and prepares application additions
+or status updates. Gmail thread IDs provide the strongest match; exact
+university and role provide a conservative fallback. Unmatched messages remain
+in a review list. The scanner stores no message body in the tracker.
+
+### Job Leads milestone
+
+The database now has a third logical sheet for jobs found by discovery tools.
+Each lead can store the university, role, location, sponsorship evidence,
+source, and original posting URL. The dashboard displays the table and direct
+links. A public university-job discovery source still needs to populate it.
+
+### Remaining external integrations
+
+1. Connect public university job discovery and Google Sheets synchronization.
 2. Add approval-gated email drafting and sending with duplicate-contact checks.

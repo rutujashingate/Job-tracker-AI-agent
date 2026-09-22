@@ -19,6 +19,10 @@ goals, state, tools, validation, human approval, and local memory.
 - Includes an outreach-history data model for future duplicate-email checks.
 - Provides a dashboard with metrics, charts, tables, and in-app reminders.
 - Exports Applications and Outreach History as separate CSV sheets.
+- Connects to Gmail through local Google OAuth with read-only permission.
+- Scans job application email beginning June 1, 2025 and excludes hackathons.
+- Detects application confirmations and matched status changes for approval.
+- Provides a Job Leads table for discovered jobs and original posting links.
 
 ## Agent workflow
 
@@ -45,6 +49,9 @@ Display the current pipeline
 ├── main.py             # Interactive command-line interface and approval gate
 ├── dashboard.py        # Streamlit dashboard, tables, charts, and forms
 ├── dashboard_data.py   # Stable CSV export helpers
+├── gmail_service.py    # Gmail OAuth, search, retrieval, and MIME decoding
+├── email_importer.py   # Job-email classification and status matching
+├── GMAIL_SETUP.md      # Google Cloud and portal connection instructions
 ├── tracker.py          # Application, status, summary, and reminder tools
 ├── validation.py       # Input rules and normalization
 ├── storage.py          # Approved JSON loading and atomic saving
@@ -58,15 +65,15 @@ Display the current pipeline
 
 ## Requirements
 
-- Python 3.9 or newer
-- Streamlit 1.50 and pandas for the dashboard
+- Python 3.10 or newer; Python 3.12 is recommended for Google API support
+- Streamlit and pandas for the dashboard
 
 ## Run the dashboard
 
 Create a virtual environment and install the UI dependencies:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
@@ -79,8 +86,9 @@ streamlit run dashboard.py
 
 Streamlit opens the local app in your browser. Use **Settings** to configure the
 search goal, **Applications** to track jobs, **Outreach** to prevent duplicate
-contact, and **Notifications** to see reminders. Each write is staged for
-approval before the JSON file changes.
+contact, **Inbox Sync** to import Gmail activity, **Job Leads** to view found
+jobs, and **Notifications** to see reminders. Each write is staged for approval
+before the JSON file changes.
 
 ## Run the command-line app
 
@@ -138,9 +146,10 @@ date, follow-up date, job details, sponsorship evidence, and notes.
 python3 -m unittest discover -s tests -v
 ```
 
-The tests cover the normal application workflow, CSV export, empty company names, invalid
-statuses, past deadlines, vague approval responses, cancelled writes, approved
-persistence, and malformed JSON.
+The tests cover the normal application workflow, CSV export, Gmail
+classification, hackathon exclusion, email-driven status updates, empty company
+names, invalid statuses, past deadlines, vague approval responses, cancelled
+writes, approved persistence, and malformed JSON.
 
 ## Local data and privacy
 
@@ -149,8 +158,8 @@ private job-search information. `.env` is also excluded for future API secrets.
 
 ## Current limitations
 
-- Job discovery is still manual.
-- Gmail application detection is not connected yet.
+- A job-discovery source is not connected yet, so Job Leads starts empty.
+- Gmail requires the one-time Google Cloud setup in `GMAIL_SETUP.md`.
 - The two tables can be downloaded as CSV but are not synchronized to Google
   Sheets yet.
 - The app prepares outreach-history records but does not send email yet.
@@ -161,15 +170,14 @@ private job-search information. `.env` is also excluded for future API secrets.
 ## Planned extensions
 
 1. Find matching jobs on public university career pages.
-2. Read application and status emails with user-authorized Gmail access.
-3. Synchronize applications and outreach history to two Google Sheet tabs.
-4. Draft hiring-team emails, check for duplicate contacts, and send only after
+2. Synchronize applications, outreach history, and job leads to Google Sheets.
+3. Draft hiring-team emails, check for duplicate contacts, and send only after
    the user approves the exact recipient, subject, and message.
 
 ## Connecting an email account
 
-Typing an email address into the dashboard does not grant mailbox access. Gmail
-integration will use Google OAuth: the dashboard opens Google's account chooser,
-you select the Gmail account, and Google returns a limited access token. Never
-put a Gmail password in this repository. OAuth credential and token files are
-excluded by `.gitignore`.
+Typing an email address into the dashboard does not grant mailbox access. Follow
+[GMAIL_SETUP.md](GMAIL_SETUP.md), then use **Settings → Connect Gmail**. The
+dashboard opens Google's account chooser, you select the Gmail account, and
+Google returns a read-only access token. Never put a Gmail password in this
+repository. OAuth credential and token files are excluded by `.gitignore`.

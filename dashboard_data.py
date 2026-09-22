@@ -17,6 +17,8 @@ APPLICATION_COLUMNS = (
     "stem_opt_evidence",
     "h1b_evidence",
     "source_email_id",
+    "source_thread_id",
+    "last_status_email_id",
     "last_email_date",
     "follow_up_date",
     "notes",
@@ -34,6 +36,22 @@ OUTREACH_COLUMNS = (
     "date_sent",
     "reply_status",
     "follow_up_date",
+)
+
+JOB_LEAD_COLUMNS = (
+    "id",
+    "university",
+    "role_title",
+    "location",
+    "job_url",
+    "date_found",
+    "date_posted",
+    "sponsorship_status",
+    "stem_opt_evidence",
+    "h1b_evidence",
+    "source",
+    "status",
+    "notes",
 )
 
 

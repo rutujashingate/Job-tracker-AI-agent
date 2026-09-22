@@ -11,6 +11,8 @@ import unittest
 from unittest.mock import patch
 
 from dashboard_data import APPLICATION_COLUMNS, records_to_csv
+from email_importer import build_email_import_plan, classify_job_email
+from gmail_service import build_job_email_query
 from main import commit_proposed_change, request_save_approval
 from storage import empty_database, load_database, save_database
 from tracker import (
@@ -171,6 +173,71 @@ class CsvExportTests(unittest.TestCase):
         self.assertEqual(lines[0].split(","), list(APPLICATION_COLUMNS))
         self.assertIn("Example University", lines[1])
         self.assertIn("Junior Developer", lines[1])
+
+
+class GmailImportTests(unittest.TestCase):
+    def make_message(self, **overrides):
+        message = {
+            "message_id": "message-1",
+            "thread_id": "thread-1",
+            "subject": (
+                "Application received for Junior Software Developer "
+                "at Example University"
+            ),
+            "sender_name": "Example University Careers",
+            "sender_address": "careers@example.edu",
+            "received_at": "2025-06-02T12:00:00+00:00",
+            "received_date": "2025-06-02",
+            "snippet": "Thank you for applying.",
+            "body": "We received your application for this position.",
+        }
+        message.update(overrides)
+        return message
+
+    def test_hackathon_email_is_excluded(self):
+        message = self.make_message(
+            subject="Hackathon application received",
+            body="Thank you for applying to our hackathon.",
+        )
+        self.assertIsNone(classify_job_email(message))
+
+    def test_confirmation_and_rejection_update_one_application(self):
+        confirmation = classify_job_email(self.make_message())
+        rejection = classify_job_email(
+            self.make_message(
+                message_id="message-2",
+                subject=(
+                    "Update on your application for Junior Software Developer "
+                    "at Example University"
+                ),
+                received_at="2025-06-10T12:00:00+00:00",
+                received_date="2025-06-10",
+                snippet="We are not moving forward.",
+                body=(
+                    "We have decided not to move forward with your application "
+                    "for this position."
+                ),
+            )
+        )
+
+        plan = build_email_import_plan(
+            empty_database(),
+            [rejection, confirmation],
+        )
+
+        self.assertEqual(len(plan["changes"]), 2)
+        self.assertEqual(len(plan["database"]["applications"]), 1)
+        application = plan["database"]["applications"][0]
+        self.assertEqual(application["company_name"], "Example University")
+        self.assertEqual(application["role_title"], "Junior Software Developer")
+        self.assertEqual(application["status"], "rejected")
+        self.assertEqual(application["last_status_email_id"], "message-2")
+        self.assertEqual(plan["unmatched"], [])
+
+    def test_gmail_query_starts_in_june_2025_and_excludes_hackathons(self):
+        query = build_job_email_query(date(2025, 6, 1))
+        self.assertIn("after:2025/06/01", query)
+        self.assertIn("-hackathon", query)
 
 
 if __name__ == "__main__":

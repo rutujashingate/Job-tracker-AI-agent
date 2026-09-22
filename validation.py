@@ -80,6 +80,8 @@ def validate_application(
     stem_opt_evidence="",
     h1b_evidence="",
     source_email_id="",
+    source_thread_id="",
+    last_status_email_id="",
     last_email_date="",
     follow_up_date="",
 ):
@@ -113,6 +115,8 @@ def validate_application(
         "stem_opt_evidence": stem_opt_evidence.strip(),
         "h1b_evidence": h1b_evidence.strip(),
         "source_email_id": source_email_id.strip(),
+        "source_thread_id": source_thread_id.strip(),
+        "last_status_email_id": last_status_email_id.strip(),
         "last_email_date": last_email_date,
         "follow_up_date": follow_up_date,
         "notes": notes.strip(),

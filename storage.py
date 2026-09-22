@@ -14,6 +14,12 @@ def empty_database():
         "search_goal": None,
         "applications": [],
         "outreach_history": [],
+        "job_leads": [],
+        "email_sync": {
+            "start_date": "2025-06-01",
+            "last_scan_at": None,
+            "processed_message_ids": [],
+        },
     }
 
 
@@ -43,6 +49,15 @@ def load_database(path=None):
     database.setdefault("search_goal", None)
     database.setdefault("applications", [])
     database.setdefault("outreach_history", [])
+    database.setdefault("job_leads", [])
+    database.setdefault(
+        "email_sync",
+        {
+            "start_date": "2025-06-01",
+            "last_scan_at": None,
+            "processed_message_ids": [],
+        },
+    )
     if database["search_goal"] is not None and not isinstance(
         database["search_goal"], dict
     ):
@@ -51,6 +66,10 @@ def load_database(path=None):
         raise ValueError("Saved applications must be a list.")
     if not isinstance(database["outreach_history"], list):
         raise ValueError("Saved outreach_history must be a list.")
+    if not isinstance(database["job_leads"], list):
+        raise ValueError("Saved job_leads must be a list.")
+    if not isinstance(database["email_sync"], dict):
+        raise ValueError("Saved email_sync must be an object.")
     return database
 
 

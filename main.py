@@ -1,7 +1,10 @@
-"""Command-line interface for the in-memory job application tracker."""
+"""Command-line interface with approval-gated local persistence."""
 
+from copy import deepcopy
 from datetime import date
+import json
 
+from storage import load_database, save_database
 from tracker import (
     get_follow_up_reminders,
     log_application,
@@ -10,6 +13,10 @@ from tracker import (
     update_status,
 )
 from validation import STATUSES, validate_search_goal
+
+
+APPROVAL_WORDS = ("yes", "confirm", "save")
+CANCEL_WORDS = ("no", "cancel")
 
 
 def ask_for_goal():
@@ -32,6 +39,48 @@ def ask_for_goal():
             print(f"Please try again: {exc}")
 
 
+def request_save_approval(action, change, input_func=input):
+    """Preview one proposed change and wait for a clear decision."""
+    print("\nProposed change:")
+    print(json.dumps({"action": action, "change": change}, indent=2))
+    while True:
+        response = input_func(
+            "Type yes, confirm, or save to approve; no or cancel to reject: "
+        ).strip().lower()
+        if response in APPROVAL_WORDS:
+            return True
+        if response in CANCEL_WORDS:
+            return False
+        print("Please enter a clear decision: yes, confirm, save, no, or cancel.")
+
+
+def commit_proposed_change(database, proposed_database, action, change):
+    """Save a proposed database and adopt it only after user approval."""
+    if not request_save_approval(action, change):
+        print("Change cancelled. Nothing was saved.")
+        return False
+
+    file_path = save_database(proposed_database, approved=True)
+    database.clear()
+    database.update(proposed_database)
+    print(f"Saved successfully to {file_path}.")
+    return True
+
+
+def collect_and_save_goal(database):
+    """Collect the initial goal and offer to save it."""
+    search_goal = ask_for_goal()
+    proposed_database = deepcopy(database)
+    proposed_database["search_goal"] = search_goal
+    commit_proposed_change(
+        database,
+        proposed_database,
+        "set_search_goal",
+        {"search_goal": search_goal},
+    )
+    return search_goal
+
+
 def display_goal(search_goal):
     """Show the validated goal at the beginning of a session."""
     print("\nGoal captured for this session:")
@@ -40,7 +89,8 @@ def display_goal(search_goal):
     print(f"  Application goal: {search_goal['application_goal']}")
     print(f"  Deadline: {search_goal['deadline']}")
     print(f"  Weekly hours: {search_goal['weekly_hours']}")
-    print(f"  Sponsorship needs: {', '.join(search_goal['sponsorship_needs'])}")
+    sponsorship_needs = search_goal.get("sponsorship_needs", ["stem_opt", "h1b"])
+    print(f"  Sponsorship needs: {', '.join(sponsorship_needs)}")
 
 
 def display_pipeline(applications):
@@ -66,13 +116,13 @@ def display_applications(applications):
         )
         print(
             f"      Applied: {application['date_applied']} | "
-            f"Follow up: {application['follow_up_date']}"
+            f"Follow up: {application.get('follow_up_date') or 'not set'}"
         )
     return True
 
 
-def prompt_to_log_application(applications):
-    """Collect, validate, and add one application to the current session."""
+def prompt_to_log_application(database):
+    """Collect an application and save it only after approval."""
     print("\nLog a job application")
     company_name = input("University name: ")
     role_title = input("Role title: ")
@@ -90,9 +140,10 @@ def prompt_to_log_application(applications):
     h1b_evidence = input("H-1B evidence (optional): ")
     notes = input("Notes (optional): ")
 
+    proposed_database = deepcopy(database)
     try:
         application = log_application(
-            applications,
+            proposed_database["applications"],
             company_name,
             role_title,
             date_applied,
@@ -109,11 +160,13 @@ def prompt_to_log_application(applications):
         print(f"Application was not added: {exc}")
         return None
 
-    print(
-        f"Application added in memory. Follow-up date: "
-        f"{application['follow_up_date']}"
+    saved = commit_proposed_change(
+        database,
+        proposed_database,
+        "add_application",
+        {"application": application},
     )
-    return application
+    return application if saved else None
 
 
 def choose_application(applications):
@@ -133,22 +186,33 @@ def choose_application(applications):
     return applications[index]
 
 
-def prompt_to_update_status(applications):
-    """Choose an application and assign it a validated status."""
-    application = choose_application(applications)
+def prompt_to_update_status(database):
+    """Propose a status change and save it only after approval."""
+    application = choose_application(database["applications"])
     if application is None:
         return None
 
     print(f"Allowed statuses: {', '.join(STATUSES)}")
     new_status = input("New status: ")
+    proposed_database = deepcopy(database)
     try:
-        updated = update_status(applications, application["id"], new_status)
+        updated = update_status(
+            proposed_database["applications"], application["id"], new_status
+        )
     except ValueError as exc:
         print(f"Status was not updated: {exc}")
         return None
 
-    print(f"Status updated to {updated['status']} in memory.")
-    return updated
+    saved = commit_proposed_change(
+        database,
+        proposed_database,
+        "update_application_status",
+        {
+            "before": application,
+            "after": updated,
+        },
+    )
+    return updated if saved else None
 
 
 def display_reminders(applications):
@@ -167,7 +231,7 @@ def display_reminders(applications):
 
 
 def display_menu():
-    """Print the available Step 3 actions."""
+    """Print the available tracker actions."""
     print("\nChoose an action:")
     print("  1. Log an application")
     print("  2. Update an application status")
@@ -177,47 +241,60 @@ def display_menu():
 
 
 def main():
-    """Run the interactive Step 3 application loop."""
+    """Load saved data and run the approval-gated application loop."""
     print("University Job Application Tracker")
-    search_goal = ask_for_goal()
-    applications = []
-    outreach_history = []
+    try:
+        database = load_database()
+    except (OSError, ValueError) as exc:
+        print(f"The saved tracker could not be loaded: {exc}")
+        return
+
+    search_goal = database["search_goal"]
+    if search_goal is None:
+        search_goal = collect_and_save_goal(database)
+    else:
+        print("Loaded the existing tracker from local JSON.")
+
     session_state = make_session_state(
-        search_goal, applications, outreach_history
+        search_goal,
+        database["applications"],
+        database["outreach_history"],
     )
 
     display_goal(search_goal)
-    display_pipeline(applications)
-    print("Changes remain in memory during Step 3 and are not saved yet.")
+    display_pipeline(database["applications"])
+    print("Every change requires approval before it is saved.")
 
     while True:
         display_menu()
         choice = input("Enter 1-5: ").strip()
 
         if choice == "1":
-            result = prompt_to_log_application(applications)
+            result = prompt_to_log_application(database)
             action = "logged application" if result else "log application failed"
         elif choice == "2":
-            result = prompt_to_update_status(applications)
+            result = prompt_to_update_status(database)
             action = "updated status" if result else "status update failed"
         elif choice == "3":
-            display_applications(applications)
+            display_applications(database["applications"])
             action = "viewed applications"
         elif choice == "4":
-            display_reminders(applications)
+            display_reminders(database["applications"])
             action = "viewed reminders"
         elif choice == "5":
-            print("Session ended. Step 4 will add approved JSON saving.")
+            print("Session ended. Your approved changes are saved.")
             break
         else:
             print("Please choose a number from 1 to 5.")
             continue
 
         session_state = make_session_state(
-            search_goal, applications, outreach_history
+            search_goal,
+            database["applications"],
+            database["outreach_history"],
         )
         session_state["last_action"] = action
-        display_pipeline(applications)
+        display_pipeline(database["applications"])
 
 
 if __name__ == "__main__":

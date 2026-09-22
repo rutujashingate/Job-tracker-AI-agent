@@ -125,8 +125,23 @@ status, view applications, and view reminders. It displays the complete
 pipeline after every action. Step 3 keeps changes in memory so that approval
 and persistence can be added together in Step 4.
 
+## Step 4: approval gates and JSON persistence
+
+On startup, the CLI loads `data/applications.json`. A missing file creates an
+empty in-memory database. An invalid JSON document stops the program so that a
+later save cannot overwrite data that failed to load.
+
+Every proposed change is applied to a copy of the database first. The CLI then
+prints the action and exact record fields as formatted JSON. It accepts `yes`,
+`confirm`, or `save`, and it cancels on `no` or `cancel`. Any other response is
+unclear and causes another prompt.
+
+After approval, the storage layer writes a temporary JSON file and replaces the
+current file in one operation. It also rejects calls that do not carry an
+explicit approval flag. The live in-memory database changes only after the
+write succeeds. The CLI reports the path after each successful save.
+
 ## Later milestones
 
-1. Add approval gates and local JSON persistence.
-2. Connect job discovery, email reading, and the two spreadsheet tabs.
-3. Test edge cases, document the program, and prepare a portfolio repository.
+1. Connect job discovery, email reading, and the two spreadsheet tabs.
+2. Test edge cases, document the program, and prepare a portfolio repository.

@@ -106,9 +106,27 @@ During one run, `session_state` holds the search goal, deadline, application
 count, outreach count, current pipeline, pending action, and last completed
 action. The saved JSON is the long-term memory; session state is working memory.
 
+## Step 3: helper functions and CLI
+
+The in-memory tracker provides these actions:
+
+- `log_application` validates a record, calculates its default seven-day
+  follow-up date, and adds it to the current session;
+- `update_status` finds an application by ID and assigns an allowed status;
+- `calculate_follow_up_date` performs the reminder date calculation;
+- `summarise_pipeline` counts applications in every status;
+- `get_follow_up_reminders` finds active applications whose reminder is due;
+  and
+- `find_duplicate_contact` compares normalized email addresses before future
+  outreach.
+
+The CLI collects the search goal, lets the user log applications, update a
+status, view applications, and view reminders. It displays the complete
+pipeline after every action. Step 3 keeps changes in memory so that approval
+and persistence can be added together in Step 4.
+
 ## Later milestones
 
-1. Build tracker helper functions and the interactive CLI.
-2. Add approval gates and local JSON persistence.
-3. Connect job discovery, email reading, and the two spreadsheet tabs.
-4. Test edge cases, document the program, and prepare a portfolio repository.
+1. Add approval gates and local JSON persistence.
+2. Connect job discovery, email reading, and the two spreadsheet tabs.
+3. Test edge cases, document the program, and prepare a portfolio repository.

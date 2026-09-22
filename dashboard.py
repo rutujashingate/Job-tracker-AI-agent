@@ -3,6 +3,7 @@
 from collections import Counter
 from copy import deepcopy
 from datetime import date, timedelta
+import json
 
 import pandas as pd
 import streamlit as st
@@ -133,10 +134,106 @@ def job_leads_frame(job_leads):
     return pd.DataFrame(job_leads, columns=JOB_LEAD_COLUMNS)
 
 
+def gmail_connection_page():
+    """Provide one visible place to configure and connect Gmail."""
+    st.title("Connect Gmail")
+    st.write(
+        "Connect the Gmail account that receives your job application email. "
+        "Google handles the sign-in; this dashboard never asks for your password."
+    )
+
+    try:
+        gmail_credentials = load_credentials()
+    except Exception as exc:
+        gmail_credentials = None
+        st.error(f"Stored Gmail authorization could not be loaded: {exc}")
+
+    if gmail_credentials:
+        try:
+            profile = gmail_profile(build_gmail_service(gmail_credentials))
+        except Exception as exc:
+            st.error(f"Gmail could not be reached: {exc}")
+        else:
+            st.success(
+                f"Connected read-only to {profile.get('emailAddress', 'Gmail')}."
+            )
+            st.info(
+                "Open Inbox Sync to scan application email beginning June 1, 2025."
+            )
+        if st.button("Disconnect Gmail", width="stretch"):
+            disconnect_gmail()
+            st.session_state.gmail_scan_plan = None
+            st.rerun()
+        return
+
+    st.warning("Gmail is not connected.")
+    client_file = credentials_file()
+    if not client_file.exists():
+        st.subheader("First-time OAuth setup")
+        st.write(
+            "Create a Desktop OAuth client in Google Cloud, download its JSON "
+            "file, and upload it here. It stays on this computer and is excluded "
+            "from Git."
+        )
+        uploaded_file = st.file_uploader(
+            "Upload Google OAuth client JSON",
+            type=("json",),
+        )
+        if uploaded_file is not None:
+            try:
+                client_data = json.loads(uploaded_file.getvalue())
+                installed_client = client_data.get("installed", {})
+                if not installed_client.get("client_id") or not installed_client.get(
+                    "client_secret"
+                ):
+                    raise ValueError(
+                        "Upload a Desktop app OAuth client JSON file from Google Cloud."
+                    )
+            except (json.JSONDecodeError, ValueError) as exc:
+                st.error(exc)
+            else:
+                if st.button(
+                    "Save OAuth configuration",
+                    type="primary",
+                    width="stretch",
+                ):
+                    client_file.write_text(
+                        json.dumps(client_data, indent=2),
+                        encoding="utf-8",
+                    )
+                    st.rerun()
+        st.markdown(
+            "Detailed steps: [Gmail setup guide]"
+            "(https://github.com/rutujashingate/Job-tracker-application/"
+            "blob/main/GMAIL_SETUP.md)"
+        )
+        return
+
+    st.success("OAuth configuration is ready.")
+    st.caption(f"Local configuration: {client_file}")
+    if st.button("Connect Gmail", type="primary", width="stretch"):
+        try:
+            with st.spinner("Waiting for Google authorization..."):
+                connect_gmail()
+        except Exception as exc:
+            st.error(f"Gmail authorization failed: {exc}")
+        else:
+            st.rerun()
+
+
 def dashboard_page(database):
     """Display high-level metrics, charts, and due reminders."""
     st.title("Job search dashboard")
     st.caption("University roles · STEM OPT · Future H-1B sponsorship")
+    try:
+        gmail_connected = load_credentials() is not None
+    except Exception:
+        gmail_connected = False
+    if not gmail_connected:
+        st.warning(
+            "Gmail is not connected. Select **Connect Gmail** in the left "
+            "navigation to import applications automatically."
+        )
     applications = database["applications"]
     summary = summarise_pipeline(applications)
     reminders = get_follow_up_reminders(applications)
@@ -365,7 +462,7 @@ def inbox_sync_page(database):
         st.error(f"The Gmail connection needs attention: {exc}")
         return
     if credentials is None:
-        st.warning("Gmail is not connected. Connect it from Settings first.")
+        st.warning("Gmail is not connected. Open Connect Gmail from the sidebar.")
         return
 
     try:
@@ -523,7 +620,7 @@ def notifications_page(database):
             "Sending email is still disabled and will require a separate scope."
         )
     else:
-        st.info("Connect Gmail from Settings to scan application-status email.")
+        st.info("Open Connect Gmail from the sidebar to authorize inbox scanning.")
 
 
 def settings_page(database):
@@ -594,42 +691,13 @@ def settings_page(database):
         st.markdown("**Gmail**")
         try:
             gmail_credentials = load_credentials()
-        except Exception as exc:
+        except Exception:
             gmail_credentials = None
-            st.error(f"Stored Gmail authorization could not be loaded: {exc}")
-
         if gmail_credentials:
-            try:
-                profile = gmail_profile(build_gmail_service(gmail_credentials))
-            except Exception as exc:
-                st.error(f"Gmail could not be reached: {exc}")
-            else:
-                st.success(f"Connected read-only: {profile.get('emailAddress', 'Gmail')}")
-            if st.button("Disconnect Gmail"):
-                disconnect_gmail()
-                st.session_state.gmail_scan_plan = None
-                st.rerun()
+            st.success("Connected read-only")
         else:
             st.error("Not connected")
-            st.write(
-                "Select Connect Gmail, then choose your account in Google's "
-                "browser window. Do not enter a Gmail password in this app."
-            )
-            if credentials_file().exists():
-                if st.button("Connect Gmail", type="primary"):
-                    try:
-                        with st.spinner("Waiting for Google authorization..."):
-                            connect_gmail()
-                    except Exception as exc:
-                        st.error(f"Gmail authorization failed: {exc}")
-                    else:
-                        st.rerun()
-            else:
-                st.warning(
-                    "OAuth setup is required first. Download the Google OAuth "
-                    f"desktop client file to: {credentials_file()}"
-                )
-                st.button("Connect Gmail", disabled=True)
+        st.write("Use the clearly labeled **Connect Gmail** page in the sidebar.")
         st.caption("Requested Gmail permission: read-only.")
     with connection_columns[1]:
         st.markdown("**Google Sheets**")
@@ -655,6 +723,7 @@ with st.sidebar:
         "Navigation",
         (
             "Dashboard",
+            "Connect Gmail",
             "Applications",
             "Inbox Sync",
             "Job Leads",
@@ -675,6 +744,8 @@ with st.sidebar:
 database = st.session_state.database
 if page == "Dashboard":
     dashboard_page(database)
+elif page == "Connect Gmail":
+    gmail_connection_page()
 elif page == "Applications":
     applications_page(database)
 elif page == "Inbox Sync":

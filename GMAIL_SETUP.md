@@ -53,10 +53,10 @@ source .venv/bin/activate
 streamlit run dashboard.py
 ```
 
-Then open:
+Then open the clearly labeled sidebar page:
 
 ```text
-Settings → Gmail → Connect Gmail
+Connect Gmail
 ```
 
 Google opens an account chooser. Select the Gmail account that receives your

@@ -177,7 +177,7 @@ private job-search information. `.env` is also excluded for future API secrets.
 ## Connecting an email account
 
 Typing an email address into the dashboard does not grant mailbox access. Follow
-[GMAIL_SETUP.md](GMAIL_SETUP.md), then use **Settings → Connect Gmail**. The
+[GMAIL_SETUP.md](GMAIL_SETUP.md), then select **Connect Gmail** in the sidebar. The
 dashboard opens Google's account chooser, you select the Gmail account, and
 Google returns a read-only access token. Never put a Gmail password in this
 repository. OAuth credential and token files are excluded by `.gitignore`.

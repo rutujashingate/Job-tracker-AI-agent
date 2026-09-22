@@ -44,7 +44,7 @@ flowchart TD
 | `tracker.py` | Pure in-memory application, status, reminder, summary, and outreach operations |
 | `validation.py` | Required fields, dates, allowed statuses, email format, and search-goal validation |
 | `storage.py` | Database defaults, compatibility defaults, JSON loading, and atomic approved writes |
-| `dashboard_data.py` | Stable spreadsheet columns and CSV serialization |
+| `dashboard_data.py` | Application and outreach CSV serialization |
 | `main.py` | Original CLI and text-based approval loop |
 
 ## State and memory
@@ -144,6 +144,9 @@ The top-level JSON object has this shape:
 | `university`, `role_title`, `job_family`, `location` | Display and filter fields |
 | `job_url` | Original official posting |
 | `date_found`, `date_posted`, `posted_at` | Discovery and freshness timestamps |
+| `summary` | Shortened verbatim excerpt from the original source description |
+| `requirements` | Up to three requirement blocks copied from the source |
+| `employment_type`, `requisition_id`, `closing_date` | Structured details exposed by the source |
 | `sponsorship_status` | Conservative evidence state, initially `unclear` |
 | `stem_opt_evidence`, `h1b_evidence` | Explicit evidence when available |
 | `source` | Human-readable official source name |
@@ -161,12 +164,16 @@ email address is the duplicate-check key.
 1. `JOB_SOURCES` declares each official source and parser kind.
 2. Sources are fetched concurrently with a bounded thread pool.
 3. RSS, Atom, and Workday payloads are converted to one job-lead shape.
-4. `is_target_role` accepts target titles and rejects senior or management
+4. Matching detail payloads are read for descriptions, requirements, closing
+   dates, and explicit sponsorship statements. The displayed excerpt keeps the
+   source's original wording; the application does not generate a description.
+5. `is_target_role` accepts target titles and rejects senior or management
    wording.
-5. The original posting URL becomes the cross-scan deduplication key.
-6. Live results are cached by Streamlit for 30 minutes.
-7. Filters and charts operate on live plus previously saved results.
-8. New results are saved only through the approval gate.
+6. The original posting URL becomes the cross-scan deduplication key.
+7. Live results are cached by Streamlit for 30 minutes.
+8. Filters operate on live plus previously saved results, while job charts are
+   rendered on the home dashboard.
+9. New and enriched results are saved only through the approval gate.
 
 One source failure does not discard successful sources. The Jobs page lists each
 source error in an expandable warning.

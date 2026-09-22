@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from html import unescape
+from html.parser import HTMLParser
 import json
 import re
 from urllib.parse import urljoin
@@ -109,6 +110,79 @@ SENIOR_ROLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+SUMMARY_HEADINGS = (
+    "about the role",
+    "position summary",
+    "job summary",
+    "purpose of position",
+    "job description",
+)
+REQUIREMENT_HEADINGS = (
+    "minimum qualifications",
+    "required qualifications",
+    "qualifications",
+    "what you'll need",
+    "what you will need",
+)
+SECTION_NAMES = {
+    *SUMMARY_HEADINGS,
+    *REQUIREMENT_HEADINGS,
+    "key responsibilities",
+    "responsibilities",
+    "preferred qualifications",
+    "additional information",
+    "position & application details",
+    "how to apply",
+}
+NO_SPONSORSHIP_PATTERNS = (
+    r"visa sponsorship is not available",
+    r"sponsorship is not available",
+    r"will not (?:provide|offer) (?:visa )?sponsorship",
+    r"does not (?:provide|offer) (?:visa )?sponsorship",
+    r"unable to (?:provide|offer) (?:visa )?sponsorship",
+    r"not eligible for (?:visa )?sponsorship",
+)
+SPONSORSHIP_AVAILABLE_PATTERNS = (
+    r"visa sponsorship is available",
+    r"(?:will|can) (?:provide|offer) visa sponsorship",
+    r"eligible for (?:employment )?visa sponsorship",
+)
+
+
+class _JobHTMLParser(HTMLParser):
+    """Turn job-description HTML into readable blocks without executing markup."""
+
+    BLOCK_TAGS = {"p", "li", "h1", "h2", "h3", "h4", "h5", "br", "div"}
+
+    def __init__(self):
+        super().__init__()
+        self.blocks = []
+        self.current = []
+
+    def _finish_block(self):
+        text = " ".join(" ".join(self.current).split())
+        if text and (not self.blocks or self.blocks[-1] != text):
+            self.blocks.append(text)
+        self.current = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.BLOCK_TAGS and self.current:
+            self._finish_block()
+
+    def handle_endtag(self, tag):
+        if tag in self.BLOCK_TAGS and self.current:
+            self._finish_block()
+
+    def handle_data(self, data):
+        text = " ".join(unescape(data).split())
+        if text:
+            self.current.append(text)
+
+    def finish(self):
+        if self.current:
+            self._finish_block()
+        return self.blocks
+
 
 def is_target_role(title):
     """Return True for a target software or AI title without senior wording."""
@@ -135,6 +209,127 @@ def _clean_text(value):
     return " ".join(unescape(value or "").split())
 
 
+def html_to_blocks(value):
+    """Return visible text blocks from an HTML job description."""
+    parser = _JobHTMLParser()
+    parser.feed(value or "")
+    return parser.finish()
+
+
+def _normalized_heading(value):
+    return re.sub(r"[^a-z0-9&' ]", "", value.lower()).strip()
+
+
+def _is_heading(value):
+    normalized = _normalized_heading(value)
+    return normalized in SECTION_NAMES or (
+        len(value) <= 60
+        and len(value.split()) <= 7
+        and value.upper() == value
+        and any(character.isalpha() for character in value)
+    )
+
+
+def _clip_text(value, limit=520):
+    value = " ".join(value.split())
+    if len(value) <= limit:
+        return value
+    shortened = value[: limit + 1].rsplit(" ", 1)[0]
+    return shortened.rstrip(" ,;:") + "…"
+
+
+def _section_after_heading(blocks, headings, maximum_blocks=3):
+    normalized_headings = set(headings)
+    for index, block in enumerate(blocks):
+        if _normalized_heading(block) not in normalized_headings:
+            continue
+        section = []
+        for candidate in blocks[index + 1 :]:
+            if _is_heading(candidate):
+                break
+            cleaned = candidate.lstrip("•-* ").strip()
+            if cleaned:
+                section.append(cleaned)
+            if len(section) >= maximum_blocks:
+                break
+        if section:
+            return section
+    return []
+
+
+def _evidence_sentence(text, pattern):
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    sentence_start = max(
+        text.rfind(".", 0, match.start()),
+        text.rfind("\n", 0, match.start()),
+    )
+    next_period = text.find(".", match.end())
+    sentence_end = len(text) if next_period == -1 else next_period + 1
+    return _clip_text(text[sentence_start + 1 : sentence_end].strip(), 280)
+
+
+def extract_job_content(description_html):
+    """Extract a card summary, requirements, and explicit sponsorship evidence."""
+    blocks = html_to_blocks(description_html)
+    summary_parts = []
+    for heading in SUMMARY_HEADINGS:
+        summary_parts = _section_after_heading(blocks, (heading,), maximum_blocks=2)
+        if summary_parts:
+            break
+    if not summary_parts:
+        summary_parts = [
+            block
+            for block in blocks
+            if not _is_heading(block) and len(block.split()) >= 8
+        ][:2]
+    summary = _clip_text(" ".join(summary_parts))
+
+    requirements = []
+    for heading in REQUIREMENT_HEADINGS:
+        requirements = _section_after_heading(
+            blocks,
+            (heading,),
+            maximum_blocks=3,
+        )
+        if requirements:
+            break
+
+    plain_text = "\n".join(blocks)
+    sponsorship_status = "unclear"
+    h1b_evidence = ""
+    for pattern in NO_SPONSORSHIP_PATTERNS:
+        evidence = _evidence_sentence(plain_text, pattern)
+        if evidence:
+            sponsorship_status = "not_available"
+            h1b_evidence = evidence
+            break
+    if sponsorship_status == "unclear":
+        for pattern in SPONSORSHIP_AVAILABLE_PATTERNS:
+            evidence = _evidence_sentence(plain_text, pattern)
+            if evidence:
+                sponsorship_status = "confirmed"
+                h1b_evidence = evidence
+                break
+
+    stem_evidence = ""
+    stem_match = re.search(r"\b(?:STEM OPT|OPT extension)\b", plain_text, re.I)
+    if stem_match:
+        stem_evidence = _evidence_sentence(
+            plain_text,
+            re.escape(stem_match.group(0)),
+        )
+
+    return {
+        "summary": summary,
+        "requirements": requirements,
+        "sponsorship_status": sponsorship_status,
+        "stem_opt_evidence": stem_evidence,
+        "h1b_evidence": h1b_evidence,
+    }
+
+
 def _stable_id(url):
     return sha256(url.encode("utf-8")).hexdigest()[:20]
 
@@ -153,6 +348,14 @@ def _new_lead(
     posted_at,
     source,
     found_at,
+    summary="",
+    requirements=None,
+    employment_type="",
+    requisition_id="",
+    closing_date="",
+    sponsorship_status="unclear",
+    stem_opt_evidence="",
+    h1b_evidence="",
 ):
     """Build one normalized job lead from a public source record."""
     return {
@@ -165,9 +368,14 @@ def _new_lead(
         "date_found": found_at.date().isoformat(),
         "date_posted": posted_at.date().isoformat(),
         "posted_at": _iso_datetime(posted_at),
-        "sponsorship_status": "unclear",
-        "stem_opt_evidence": "",
-        "h1b_evidence": "",
+        "summary": summary,
+        "requirements": requirements or [],
+        "employment_type": _clean_text(employment_type),
+        "requisition_id": _clean_text(requisition_id),
+        "closing_date": _clean_text(closing_date),
+        "sponsorship_status": sponsorship_status,
+        "stem_opt_evidence": stem_opt_evidence,
+        "h1b_evidence": h1b_evidence,
         "source": source,
         "status": "new",
         "notes": "Verify STEM OPT and H-1B eligibility in the original posting.",
@@ -230,6 +438,8 @@ def fetch_atom_source(source, now=None):
             published = datetime.fromisoformat(published_text)
         except (TypeError, ValueError):
             published = now
+        content = entry.findtext("atom:content", namespaces=namespace) or ""
+        details = extract_job_content(content)
         leads.append(
             _new_lead(
                 source["name"],
@@ -239,6 +449,7 @@ def fetch_atom_source(source, now=None):
                 published,
                 source["name"] + " official Atom feed",
                 now,
+                **details,
             )
         )
     return leads
@@ -287,6 +498,22 @@ def fetch_workday_source(source, now=None):
         if not is_target_role(title):
             continue
         url = urljoin(source["public_url"].rstrip("/") + "/", path.lstrip("/"))
+        details = {
+            "summary": "",
+            "requirements": [],
+            "sponsorship_status": "unclear",
+            "stem_opt_evidence": "",
+            "h1b_evidence": "",
+        }
+        posting_info = {}
+        detail_url = source["api_url"].rsplit("/jobs", 1)[0] + path
+        try:
+            detail_response = _fetch_bytes(detail_url)
+            posting_info = json.loads(detail_response).get("jobPostingInfo", {})
+            details = extract_job_content(posting_info.get("jobDescription", ""))
+        except Exception:
+            # A detail-page failure should not hide a valid listing.
+            pass
         leads.append(
             _new_lead(
                 source["name"],
@@ -296,6 +523,10 @@ def fetch_workday_source(source, now=None):
                 workday_posted_at(posting.get("postedOn"), now),
                 source["name"] + " official Workday board",
                 now,
+                employment_type=posting_info.get("timeType", ""),
+                requisition_id=posting_info.get("jobReqId", ""),
+                closing_date=posting_info.get("endDate", ""),
+                **details,
             )
         )
     return leads
@@ -383,11 +614,34 @@ def filter_jobs(job_leads, hours=None, universities=None, families=None, query="
 
 def merge_job_leads(saved_leads, discovered_leads):
     """Return all leads and the records that are new by original posting URL."""
+    discovered_by_url = {
+        lead.get("job_url"): lead
+        for lead in discovered_leads
+        if lead.get("job_url")
+    }
+    merged_saved = []
+    for saved in saved_leads:
+        fresh = discovered_by_url.get(saved.get("job_url"))
+        if not fresh:
+            merged_saved.append(saved)
+            continue
+        merged = {**saved, **fresh}
+        merged["status"] = saved.get("status", fresh.get("status", "new"))
+        if saved.get("notes") and saved.get("notes") != (
+            "Verify STEM OPT and H-1B eligibility in the original posting."
+        ):
+            merged["notes"] = saved["notes"]
+        if saved.get("sponsorship_status") in {"confirmed", "not_available"}:
+            merged["sponsorship_status"] = saved["sponsorship_status"]
+            merged["stem_opt_evidence"] = saved.get("stem_opt_evidence", "")
+            merged["h1b_evidence"] = saved.get("h1b_evidence", "")
+        merged_saved.append(merged)
+
     saved_urls = {lead.get("job_url") for lead in saved_leads if lead.get("job_url")}
     new_leads = [
         lead for lead in discovered_leads if lead.get("job_url") not in saved_urls
     ]
-    return [*saved_leads, *new_leads], new_leads
+    return [*merged_saved, *new_leads], new_leads
 
 
 def build_job_discovery_plan(database, discovered_leads, scanned_at=None):
@@ -399,6 +653,17 @@ def build_job_discovery_plan(database, discovered_leads, scanned_at=None):
         discovered_leads,
     )
     proposed["job_leads"] = merged
+    saved_by_url = {
+        lead.get("job_url"): lead
+        for lead in database.get("job_leads", [])
+        if lead.get("job_url")
+    }
+    updates = [
+        {"before": saved_by_url[lead["job_url"]], "after": lead}
+        for lead in merged
+        if lead.get("job_url") in saved_by_url
+        and lead != saved_by_url[lead["job_url"]]
+    ]
     proposed["job_discovery"] = {
         "last_scan_at": _iso_datetime(scanned_at),
         "sources": [source["name"] for source in JOB_SOURCES],
@@ -406,5 +671,6 @@ def build_job_discovery_plan(database, discovered_leads, scanned_at=None):
     return {
         "database": proposed,
         "additions": additions,
+        "updates": updates,
         "discovered_count": len(discovered_leads),
     }

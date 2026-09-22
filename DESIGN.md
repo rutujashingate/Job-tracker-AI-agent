@@ -182,8 +182,10 @@ U.S. universities. It filters target early-career technology titles, rejects
 senior and management titles, normalizes dates, and deduplicates by original
 posting URL. The dashboard starts discovery when the Jobs page opens and caches
 results for 30 minutes. It provides age, university, role-group, and text
-filters; direct posting links; charts; CSV export; and an approval gate before
-new leads are written to local JSON.
+filters; structured cards; source description excerpts; requirements; direct
+posting links; and an approval gate before new leads are written to local JSON.
+Job charts are displayed on the home dashboard. Job leads are not exported as
+CSV.
 
 ### Remaining external integrations
 

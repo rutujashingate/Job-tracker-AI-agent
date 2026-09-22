@@ -11,7 +11,6 @@ import streamlit as st
 
 from dashboard_data import (
     APPLICATION_COLUMNS,
-    JOB_LEAD_COLUMNS,
     OUTREACH_COLUMNS,
     records_to_csv,
 )
@@ -170,11 +169,6 @@ def outreach_frame(outreach_history):
     return pd.DataFrame(outreach_history, columns=OUTREACH_COLUMNS)
 
 
-def job_leads_frame(job_leads):
-    """Build a consistently ordered discovered-jobs table."""
-    return pd.DataFrame(job_leads, columns=JOB_LEAD_COLUMNS)
-
-
 def gmail_connection_page():
     """Provide one visible place to configure and connect Gmail."""
     st.title("Connect Gmail")
@@ -318,6 +312,35 @@ def dashboard_page(database):
             }
         ).set_index("Status")
         st.bar_chart(sponsorship_data)
+
+    st.divider()
+    st.subheader("Job discovery overview")
+    st.caption("Matching jobs posted within the last 30 days")
+    try:
+        discovered_jobs, _ = cached_job_discovery()
+    except Exception as exc:
+        discovered_jobs = []
+        st.warning(f"The live job overview could not be refreshed: {exc}")
+    all_jobs, _ = merge_job_leads(
+        database.get("job_leads", []),
+        discovered_jobs,
+    )
+    recent_jobs = filter_jobs(all_jobs, hours=720)
+    job_metric_columns = st.columns(3)
+    job_metric_columns[0].metric("Current matches", len(recent_jobs))
+    job_metric_columns[1].metric(
+        "Posted in 24h",
+        len(filter_jobs(all_jobs, hours=24)),
+    )
+    job_metric_columns[2].metric(
+        "Universities",
+        len({job.get("university") for job in recent_jobs}),
+    )
+    if recent_jobs:
+        _render_job_charts(recent_jobs)
+        st.markdown("[**Browse matching jobs →**](?page=Jobs)")
+    else:
+        st.info("No matching jobs were found in the last 30 days.")
 
     st.subheader("Follow-up reminders")
     if reminders:
@@ -625,8 +648,90 @@ def _render_job_charts(job_leads):
         st.altair_chart(timeline_chart, width="stretch")
 
 
+def _posted_label(job_lead):
+    """Return a compact relative label for a job card."""
+    try:
+        posted_date = date.fromisoformat(job_lead.get("date_posted", ""))
+    except (TypeError, ValueError):
+        return "Posting date unavailable"
+    age = (date.today() - posted_date).days
+    if age <= 0:
+        return "Posted today"
+    if age == 1:
+        return "Posted yesterday"
+    return f"Posted {age} days ago"
+
+
+def _sponsorship_label(status):
+    labels = {
+        "confirmed": "Sponsorship stated as available",
+        "not_available": "Sponsorship stated as unavailable",
+        "unclear": "Sponsorship needs verification",
+    }
+    return labels.get(status, "Sponsorship needs verification")
+
+
+def _render_job_card(job_lead):
+    """Render one source-grounded job card with its original-posting link."""
+    with st.container(border=True):
+        content_column, action_column = st.columns([4.5, 1.35])
+        with content_column:
+            st.markdown(f"### {job_lead.get('role_title', 'Untitled role')}")
+            st.markdown(f"**{job_lead.get('university', 'University unavailable')}**")
+        with action_column:
+            job_url = job_lead.get("job_url")
+            if job_url:
+                st.link_button(
+                    "Go to original posting",
+                    job_url,
+                    type="primary",
+                    width="stretch",
+                )
+
+        metadata = [
+            job_lead.get("location") or "Location unavailable",
+            job_lead.get("employment_type") or "Employment type unavailable",
+            _posted_label(job_lead),
+        ]
+        st.caption(" · ".join(metadata))
+        st.markdown(
+            f"**{job_lead.get('job_family', 'Technology')}**  ·  "
+            f"**{_sponsorship_label(job_lead.get('sponsorship_status'))}**"
+        )
+
+        st.markdown("**Description from the original posting**")
+        source_description = job_lead.get("summary", "").strip()
+        if source_description:
+            st.write(source_description)
+        else:
+            st.caption(
+                "This source feed did not provide description text. Open the "
+                "original posting to read it."
+            )
+
+        requirements = job_lead.get("requirements") or []
+        if requirements:
+            st.markdown("**Key requirements from the original posting**")
+            for requirement in requirements[:3]:
+                st.markdown(f"- {requirement}")
+
+        details = []
+        if job_lead.get("requisition_id"):
+            details.append(f"Requisition {job_lead['requisition_id']}")
+        if job_lead.get("closing_date"):
+            details.append(f"Closes {job_lead['closing_date'][:10]}")
+        if details:
+            st.caption(" · ".join(details))
+
+        sponsorship_evidence = job_lead.get("h1b_evidence") or job_lead.get(
+            "stem_opt_evidence"
+        )
+        if sponsorship_evidence:
+            st.caption(f"Visa statement from posting: {sponsorship_evidence}")
+
+
 def job_leads_page(database):
-    """Discover, filter, chart, export, and approval-save current job leads."""
+    """Discover, filter, display, and approval-save current job leads."""
     st.title("Jobs found for you")
     st.caption(
         "Early career software, frontend, UI, and AI roles from official "
@@ -654,8 +759,10 @@ def job_leads_page(database):
         discovered_jobs, source_errors = [], []
         st.error(f"Job discovery could not run: {exc}")
 
-    saved_jobs = database.get("job_leads", [])
-    all_jobs, new_jobs = merge_job_leads(saved_jobs, discovered_jobs)
+    plan = build_job_discovery_plan(database, discovered_jobs)
+    all_jobs = plan["database"]["job_leads"]
+    new_jobs = plan["additions"]
+    updated_jobs = plan["updates"]
     if source_errors:
         with st.expander(f"{len(source_errors)} source warning(s)"):
             for error in source_errors:
@@ -699,6 +806,11 @@ def job_leads_page(database):
         families=selected_families,
         query=keyword,
     )
+    filtered_jobs = sorted(
+        filtered_jobs,
+        key=lambda job: job.get("posted_at", ""),
+        reverse=True,
+    )
 
     last_day_count = len(filter_jobs(all_jobs, hours=24))
     metric_columns = st.columns(4)
@@ -710,61 +822,30 @@ def job_leads_page(database):
     )
     metric_columns[3].metric("New this scan", len(new_jobs))
 
-    _render_job_charts(filtered_jobs)
-
     st.subheader("Job postings")
     if filtered_jobs:
-        display_columns = (
-            "role_title",
-            "university",
-            "job_family",
-            "location",
-            "date_posted",
-            "sponsorship_status",
-            "job_url",
-        )
-        st.dataframe(
-            pd.DataFrame(filtered_jobs).reindex(columns=display_columns),
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "role_title": "Role",
-                "university": "University",
-                "job_family": "Role group",
-                "location": "Location",
-                "date_posted": st.column_config.DateColumn("Posted"),
-                "sponsorship_status": "Sponsorship",
-                "job_url": st.column_config.LinkColumn(
-                    "Original posting",
-                    display_text="Apply / view",
-                ),
-            },
-        )
+        for job_lead in filtered_jobs:
+            _render_job_card(job_lead)
     else:
         st.info("No jobs match the selected filters. Try a wider posting period.")
 
-    action_column, download_column = st.columns(2)
-    if new_jobs:
-        if action_column.button(
-            f"Review and save {len(new_jobs)} new jobs",
+    pending_job_changes = len(new_jobs) + len(updated_jobs)
+    if pending_job_changes:
+        if st.button(
+            f"Review and save {pending_job_changes} job updates",
             type="primary",
             width="stretch",
         ):
-            plan = build_job_discovery_plan(database, discovered_jobs)
             stage_change(
                 "save_discovered_jobs",
                 plan["database"],
-                {"new_job_leads": plan["additions"]},
+                {
+                    "new_job_leads": new_jobs,
+                    "enriched_job_leads": updated_jobs,
+                },
             )
     else:
-        action_column.success("All discovered jobs are already saved.")
-    download_column.download_button(
-        "Download filtered jobs CSV",
-        records_to_csv(filtered_jobs, JOB_LEAD_COLUMNS),
-        file_name="job_leads.csv",
-        mime="text/csv",
-        width="stretch",
-    )
+        st.success("All discovered job details are already saved.")
 
     st.caption(
         "Sponsorship remains unclear until a posting explicitly confirms it. "
@@ -887,7 +968,10 @@ def settings_page(database):
     st.divider()
     st.subheader("Local storage")
     st.code(str(get_data_file()))
-    st.caption("JSON is the source of truth. Each table can be downloaded as CSV.")
+    st.caption(
+        "JSON is the source of truth. Applications and Outreach History can be "
+        "downloaded as CSV."
+    )
 
 
 initialize_state()

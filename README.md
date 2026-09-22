@@ -21,17 +21,18 @@ sponsorship as `unclear` when a source does not explicitly answer the question.
   Workday job sources without requiring an API key.
 - **Relevant role filtering:** includes software, frontend, UI, programming,
   and AI roles while excluding senior, lead, management, and architect titles.
-- **Jobs dashboard:** provides 24-hour, 3-day, 7-day, 30-day, university, role,
-  and keyword filters; clickable original postings; metrics; charts; and CSV
-  export.
+- **Structured job cards:** provides 24-hour, 3-day, 7-day, 30-day, university,
+  role, and keyword filters with source descriptions, requirements, job details,
+  and a button to the original posting.
 - **Gmail connection:** uses Google OAuth and requests Gmail read-only access.
 - **Automatic application tracking:** detects application confirmations,
   interviews, offers, rejections, and withdrawals from Gmail messages.
 - **Approval gates:** shows the exact proposed JSON before discovered jobs,
   applications, status changes, settings, or outreach records are saved.
 - **Local persistence:** stores approved data in an ignored local JSON file.
-- **Application reports:** shows pipeline and sponsorship charts, follow-up
-  reminders, spreadsheet-style tables, and CSV exports.
+- **Dashboard reports:** shows application charts, job discovery charts,
+  follow-up reminders, spreadsheet-style application tables, and CSV exports
+  for applications and outreach history.
 - **Duplicate outreach protection:** keeps a separate outreach history and
   checks normalized email addresses before recording another contact.
 - **Educational CLI:** preserves the original assignment's command-line workflow
@@ -48,7 +49,7 @@ flowchart LR
     F[Gmail read-only] --> G[Classify application email]
     G --> H{Approve changes?}
     H -->|Yes| E
-    E --> I[Applications, charts, reminders, CSV]
+    E --> I[Applications, charts, reminders]
 ```
 
 Public job searches and dashboard reads do not need approval. Any change to the
@@ -63,7 +64,7 @@ local JSON database is staged first and saved only after the user selects
 ├── job_discovery.py      # Official job sources, parsing, matching, filtering
 ├── gmail_service.py      # Gmail OAuth, search, retrieval, and MIME decoding
 ├── email_importer.py     # Email classification and application matching
-├── dashboard_data.py     # Stable table columns and CSV export
+├── dashboard_data.py     # Application and outreach CSV export
 ├── main.py               # Original educational command-line interface
 ├── tracker.py            # Application, status, reminder, and outreach tools
 ├── validation.py         # Input rules and normalization
@@ -144,6 +145,13 @@ Opening **Jobs** runs discovery automatically. Results are cached for 30 minutes
 so normal filter changes do not repeatedly request university servers. **Refresh
 jobs now** clears that cache and performs a fresh scan.
 
+For matching Workday and Atom listings, the tracker reads the official detail
+payload and displays a shortened excerpt using the posting's original words. It
+does not generate or rewrite job descriptions. Requirements, employment type,
+requisition number, closing date, and explicit sponsorship language are shown
+when the source provides them. Job leads are presented as cards and are not
+exported as CSV.
+
 Discovery is a search aid. A listing can close after it is found, and
 sponsorship rules can depend on the position. Verify availability, requirements,
 STEM OPT compatibility, and H-1B support on the original university page.
@@ -179,8 +187,9 @@ python -m unittest discover -s tests -v
 ```
 
 The unit suite covers validation, follow-up dates, pipeline summaries, approval
-behavior, atomic storage, CSV output, Gmail classification and matching, job
-title filtering, time filtering, relative dates, and job deduplication.
+behavior, atomic storage, application CSV output, Gmail classification and
+matching, source-description extraction, job title filtering, time filtering,
+relative dates, and job deduplication.
 
 ## Educational CLI
 
@@ -211,8 +220,8 @@ for the working product.
 - Gmail scanning starts when the user selects **Scan Gmail**. A separate
   scheduler is required to scan while the dashboard is closed.
 - Sponsorship evidence is conservative and usually starts as `unclear`.
-- Google Sheets synchronization is not implemented; each table can be exported
-  as CSV.
+- Google Sheets synchronization is not implemented; Applications and Outreach
+  History can be exported as CSV.
 - Gmail has read-only access. Email drafting and approval-gated sending are not
   implemented yet.
 - OAuth and JSON storage are designed for one local user. A public multi-user

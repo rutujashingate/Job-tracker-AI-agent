@@ -38,25 +38,6 @@ OUTREACH_COLUMNS = (
     "follow_up_date",
 )
 
-JOB_LEAD_COLUMNS = (
-    "id",
-    "university",
-    "role_title",
-    "job_family",
-    "location",
-    "job_url",
-    "date_found",
-    "date_posted",
-    "posted_at",
-    "sponsorship_status",
-    "stem_opt_evidence",
-    "h1b_evidence",
-    "source",
-    "status",
-    "notes",
-)
-
-
 def records_to_csv(records, columns):
     """Return records as CSV text with a stable column order."""
     output = StringIO()

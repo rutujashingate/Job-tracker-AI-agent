@@ -15,6 +15,7 @@ from email_importer import build_email_import_plan, classify_job_email
 from gmail_service import build_job_email_query
 from job_discovery import (
     build_job_discovery_plan,
+    extract_job_content,
     filter_jobs,
     is_target_role,
     workday_posted_at,
@@ -302,6 +303,38 @@ class JobDiscoveryTests(unittest.TestCase):
         self.assertEqual(
             workday_posted_at("Posted 3 Days Ago", now),
             now - timedelta(days=3),
+        )
+
+    def test_job_card_content_is_extracted_from_original_description(self):
+        original_description = """
+        <h2>About the Role</h2>
+        <p>Build accessible interfaces for university students.</p>
+        <h2>Minimum Qualifications</h2>
+        <ul>
+          <li>One year of JavaScript experience.</li>
+          <li>Experience with accessible HTML.</li>
+        </ul>
+        <h2>Preferred Qualifications</h2>
+        <p>Visa sponsorship is not available for this position.</p>
+        """
+
+        content = extract_job_content(original_description)
+
+        self.assertEqual(
+            content["summary"],
+            "Build accessible interfaces for university students.",
+        )
+        self.assertEqual(
+            content["requirements"],
+            [
+                "One year of JavaScript experience.",
+                "Experience with accessible HTML.",
+            ],
+        )
+        self.assertEqual(content["sponsorship_status"], "not_available")
+        self.assertEqual(
+            content["h1b_evidence"],
+            "Visa sponsorship is not available for this position.",
         )
 
 

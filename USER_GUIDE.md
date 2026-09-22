@@ -34,7 +34,8 @@ The home page shows:
 - follow-ups due;
 - progress toward the application target;
 - an application status chart;
-- a sponsorship evidence chart; and
+- a sponsorship evidence chart;
+- job discovery metrics and charts for the last 30 days; and
 - applications due for follow-up.
 
 If Gmail is disconnected, **Connect Gmail** inside the warning is a direct link
@@ -65,8 +66,15 @@ sources. The result list contains only matching early career role titles.
 - **Universities:** one or more employers.
 - **Role groups:** software development, frontend/UI, or AI/machine learning.
 
-The four metric cards and both charts update with the selected filters. Select
-**Apply / view** to open the original university posting.
+The metric cards update with the selected filters. Each result is displayed as a
+structured card with the role, university, location, posting age, employment
+type, sponsorship state, and available job details. The description excerpt and
+requirements use text pulled directly from the original posting. The tracker
+does not generate its own job description.
+
+Select **Go to original posting** to read the full source and apply. Job charts
+are displayed on the home **Dashboard**, keeping this page focused on reviewing
+individual jobs.
 
 **Refresh jobs now** starts a new network scan. Normal page interactions reuse
 the 30-minute cache.
@@ -135,9 +143,9 @@ path of the local JSON database.
 
 ## CSV exports
 
-Applications, job leads, and outreach history each provide a CSV download. CSV
-files can be opened in Excel, Numbers, or Google Sheets. Export does not modify
-the local database.
+Applications and outreach history provide CSV downloads. Job leads remain in
+the structured card interface and local JSON. CSV files can be opened in Excel,
+Numbers, or Google Sheets. Export does not modify the local database.
 
 ## Troubleshooting
 

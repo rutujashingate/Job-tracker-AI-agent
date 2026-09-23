@@ -53,15 +53,14 @@ source .venv/bin/activate
 streamlit run dashboard.py
 ```
 
-Then open the clearly labeled sidebar page:
+Then open **Connect Gmail** in the sidebar and select the **Connect Gmail**
+button. If you did not place `credentials.json` in the project root, upload the
+downloaded JSON on this page and select **Save OAuth configuration** first.
 
-```text
-Connect Gmail
-```
-
-Google opens an account chooser. Select the Gmail account that receives your
-job application emails and approve read-only access. The resulting token is
-stored locally in `data/gmail_token.json`, which is also excluded from Git.
+Google opens an account chooser after you select the connect button. Select the
+Gmail account that receives your job application emails and approve read-only
+access. The resulting token is stored locally in `data/gmail_token.json`, which
+is also excluded from Git.
 
 ## 5. Import application email
 

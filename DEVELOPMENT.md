@@ -138,6 +138,22 @@ PY
 Live Gmail testing requires the local OAuth files and should never print token
 contents or full email bodies.
 
+### Check job-card navigation
+
+After changing `dashboard._render_job_card` or its CSS, open **Jobs** and check:
+
+1. Clicking the title, description, card padding, or **Go to original posting**
+   opens the same original posting in a new tab and preserves the Jobs filters.
+2. Pressing `Tab` focuses each linked card once, shows an outline, and `Enter`
+   opens its posting.
+3. Cards wrap without horizontal scrolling on a narrow browser window.
+4. A fixture with a missing or non-HTTP(S) URL shows **Original posting
+   unavailable** without a link. Source text containing `<`, `>`, `&`, or quotes
+   displays as text instead of becoming HTML.
+
+Keep the whole card a single native anchor without nested buttons or links.
+Escape all source-provided content before inserting it into the HTML.
+
 ## Git workflow
 
 The project uses small milestone commits. Before committing:

@@ -1,7 +1,8 @@
 # Reflection: agentic thinking in the job tracker
 
-This project is a small command-line program, but its structure contains the
-main building blocks of a larger AI agent.
+This project combines a local Streamlit dashboard with an educational
+command-line program. Its structure contains the main building blocks of a
+larger AI agent.
 
 ## Helper functions act as tools
 
@@ -19,10 +20,10 @@ tool. The model would not need direct access to the JSON file.
 
 ## Session state is working memory
 
-The `session_state` dictionary records the search goal, deadline, counts,
-pipeline, pending action, and last action. It gives the assistant the context
-needed to decide what to show next. For example, it can display the pipeline
-after an update or identify applications with due follow-ups.
+The dashboard's `st.session_state` records the loaded database, pending change,
+Gmail scan plan, navigation, and feedback messages. It gives the assistant the
+context needed to decide what to show next. The CLI keeps its own working
+dictionary for the search goal, counts, pipeline, and last action.
 
 Session state lasts for one run. The JSON document acts as long-term memory by
 preserving the search goal, applications, and outreach history between runs.
@@ -44,11 +45,12 @@ before sending.
 
 ## How the pattern scales
 
-A more capable version can add job-search, Gmail, Google Sheets, and email tools
-without discarding the current architecture. The reasoning layer can gather
-missing details and choose a tool. The validation layer can check its proposed
-arguments. The approval layer can pause consequential actions. The storage
-layer can record the result and update the state.
+Job discovery and read-only Gmail import already use this architecture. A more
+capable version can add Google Sheets synchronization and email sending. The
+reasoning layer can gather missing details and choose a tool. The validation
+layer can check its proposed arguments. The approval layer can pause
+consequential actions. The storage layer can record the result and update the
+state.
 
 As the number of tools grows, the system will also need stronger duplicate
 detection, retry handling, audit records, access controls, and tests around

@@ -3,7 +3,9 @@
 from collections import Counter
 from copy import deepcopy
 from datetime import date, timedelta
+from html import escape
 import json
+from urllib.parse import urlsplit
 
 import altair as alt
 import pandas as pd
@@ -58,6 +60,46 @@ st.markdown(
         border-radius: 0.8rem;
         padding: 1rem;
     }
+    .job-card {
+        display: block;
+        color: inherit;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.8rem;
+        padding: 1.25rem;
+        overflow-wrap: anywhere;
+    }
+    a.job-card, a.job-card:visited, a.job-card:hover {
+        color: inherit;
+        text-decoration: none;
+    }
+    a.job-card:hover {
+        border-color: #7c3aed;
+        box-shadow: 0 2px 8px #7c3aed1a;
+    }
+    a.job-card:focus-visible {
+        outline: 3px solid #7c3aed;
+        outline-offset: 3px;
+    }
+    .job-card-header {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    .job-card h3 {margin: 0 0 0.5rem; padding: 0;}
+    .job-card-action {
+        display: inline-block;
+        background: #7c3aed;
+        color: #fff;
+        border-radius: 0.5rem;
+        padding: 0.6rem 0.9rem;
+        font-weight: 600;
+    }
+    .job-card-caption {font-size: 0.875rem; opacity: 0.8;}
+    .job-card p {margin: 0 0 0.75rem; white-space: pre-line;}
+    .job-card > :last-child {margin-bottom: 0;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -672,62 +714,86 @@ def _sponsorship_label(status):
 
 
 def _render_job_card(job_lead):
-    """Render one source-grounded job card with its original-posting link."""
-    with st.container(border=True):
-        content_column, action_column = st.columns([4.5, 1.35])
-        with content_column:
-            st.markdown(f"### {job_lead.get('role_title', 'Untitled role')}")
-            st.markdown(f"**{job_lead.get('university', 'University unavailable')}**")
-        with action_column:
-            job_url = job_lead.get("job_url")
-            if job_url:
-                st.link_button(
-                    "Go to original posting",
-                    job_url,
-                    type="primary",
-                    width="stretch",
-                )
+    """Make the whole card a native link, escaping all source-provided text."""
+    title = job_lead.get("role_title") or "Untitled role"
+    university = job_lead.get("university") or "University unavailable"
+    job_url = (job_lead.get("job_url") or "").strip()
+    try:
+        parsed_url = urlsplit(job_url)
+        has_posting = parsed_url.scheme in {"http", "https"} and bool(
+            parsed_url.hostname
+        )
+    except ValueError:
+        has_posting = False
 
-        metadata = [
+    if has_posting:
+        label = f"{title} at {university}: original posting (opens in a new tab)"
+        opening = (
+            f'<a class="job-card" href="{escape(job_url, quote=True)}" '
+            f'target="_blank" rel="noopener noreferrer" '
+            f'aria-label="{escape(label, quote=True)}">'
+        )
+        action = (
+            '<span class="job-card-action">Go to original posting ↗</span>'
+            '<br><span class="job-card-caption">Opens in a new tab</span>'
+        )
+        closing = "</a>"
+    else:
+        opening = '<article class="job-card">'
+        action = (
+            '<span class="job-card-caption">Original posting unavailable</span>'
+        )
+        closing = "</article>"
+
+    metadata = " · ".join(
+        [
             job_lead.get("location") or "Location unavailable",
             job_lead.get("employment_type") or "Employment type unavailable",
             _posted_label(job_lead),
         ]
-        st.caption(" · ".join(metadata))
-        st.markdown(
-            f"**{job_lead.get('job_family', 'Technology')}**  ·  "
-            f"**{_sponsorship_label(job_lead.get('sponsorship_status'))}**"
+    )
+    family = job_lead.get("job_family") or "Technology"
+    sponsorship = _sponsorship_label(job_lead.get("sponsorship_status"))
+    description = (job_lead.get("summary") or "").strip() or (
+        "This source feed did not provide description text."
+        + (" Open the original posting to read it." if has_posting else "")
+    )
+    parts = [
+        opening,
+        '<div class="job-card-header"><div>',
+        f"<h3>{escape(title)}</h3><strong>{escape(university)}</strong></div>",
+        f"<div>{action}</div></div>",
+        f'<p class="job-card-caption">{escape(metadata)}</p>',
+        f"<p><strong>{escape(family)}</strong> · "
+        f"<strong>{escape(sponsorship)}</strong></p>",
+        "<p><strong>Description from the original posting</strong></p>",
+        f"<p>{escape(description)}</p>",
+    ]
+    requirements = job_lead.get("requirements") or []
+    if requirements:
+        parts.append(
+            "<p><strong>Key requirements from the original posting</strong></p><ul>"
         )
+        parts.extend(f"<li>{escape(item)}</li>" for item in requirements[:3])
+        parts.append("</ul>")
 
-        st.markdown("**Description from the original posting**")
-        source_description = job_lead.get("summary", "").strip()
-        if source_description:
-            st.write(source_description)
-        else:
-            st.caption(
-                "This source feed did not provide description text. Open the "
-                "original posting to read it."
-            )
-
-        requirements = job_lead.get("requirements") or []
-        if requirements:
-            st.markdown("**Key requirements from the original posting**")
-            for requirement in requirements[:3]:
-                st.markdown(f"- {requirement}")
-
-        details = []
-        if job_lead.get("requisition_id"):
-            details.append(f"Requisition {job_lead['requisition_id']}")
-        if job_lead.get("closing_date"):
-            details.append(f"Closes {job_lead['closing_date'][:10]}")
-        if details:
-            st.caption(" · ".join(details))
-
-        sponsorship_evidence = job_lead.get("h1b_evidence") or job_lead.get(
-            "stem_opt_evidence"
+    details = []
+    if job_lead.get("requisition_id"):
+        details.append(f"Requisition {job_lead['requisition_id']}")
+    if job_lead.get("closing_date"):
+        details.append(f"Closes {job_lead['closing_date'][:10]}")
+    if details:
+        parts.append(
+            f'<p class="job-card-caption">{escape(" · ".join(details))}</p>'
         )
-        if sponsorship_evidence:
-            st.caption(f"Visa statement from posting: {sponsorship_evidence}")
+    evidence = job_lead.get("h1b_evidence") or job_lead.get("stem_opt_evidence")
+    if evidence:
+        parts.append(
+            '<p class="job-card-caption">'
+            f'Visa statement from posting: {escape(evidence)}</p>'
+        )
+    parts.append(closing)
+    st.html("".join(parts))
 
 
 def job_leads_page(database):

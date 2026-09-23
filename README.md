@@ -23,7 +23,7 @@ sponsorship as `unclear` when a source does not explicitly answer the question.
   and AI roles while excluding senior, lead, management, and architect titles.
 - **Structured job cards:** provides 24-hour, 3-day, 7-day, 30-day, university,
   role, and keyword filters with source descriptions, requirements, job details,
-  and a button to the original posting.
+  and a fully clickable card that opens the original posting in a new tab.
 - **Gmail connection:** uses Google OAuth and requests Gmail read-only access.
 - **Automatic application tracking:** detects application confirmations,
   interviews, offers, rejections, and withdrawals from Gmail messages.
@@ -105,7 +105,8 @@ Use the dashboard in this order:
 
 1. Open **Settings** and save the search goal.
 2. Open **Jobs**. Discovery starts automatically and displays live matches.
-3. Filter the list and open a job's original posting to apply.
+3. Filter the list and click any job card to open its original posting in a new
+   tab and apply.
 4. Open **Connect Gmail** and complete the one-time OAuth setup.
 5. Open **Inbox Sync** and scan application email from June 1, 2025 onward.
 6. Review and approve detected application and status changes.

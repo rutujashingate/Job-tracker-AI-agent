@@ -4,8 +4,9 @@ This guide explains how to operate every part of the local dashboard.
 
 ## Start the dashboard
 
+From the project directory, run:
+
 ```bash
-cd /Users/rutujashingate/Desktop/Projects/RTC/Job_Tracker_AI
 source .venv/bin/activate
 streamlit run dashboard.py
 ```
@@ -72,16 +73,24 @@ type, sponsorship state, and available job details. The description excerpt and
 requirements use text pulled directly from the original posting. The tracker
 does not generate its own job description.
 
-Select **Go to original posting** to read the full source and apply. Job charts
-are displayed on the home **Dashboard**, keeping this page focused on reviewing
-individual jobs.
+Click anywhere on a job card, including **Go to original posting**, to read the
+full source and apply. The original university posting opens in a new browser
+tab, keeping your filtered Jobs page available. Keyboard users can press `Tab`
+to focus a card and `Enter` to open it; the focused card has a visible outline.
+If a record has no usable posting URL, its card shows **Original posting
+unavailable** and cannot be opened.
+
+Opening a posting does not save the lead or mark it as applied. Applications
+are tracked after Gmail confirmations are imported and approved. Job charts
+are displayed on the home **Dashboard**.
 
 **Refresh jobs now** starts a new network scan. Normal page interactions reuse
 the 30-minute cache.
 
-Live search results appear before they are saved. Select **Review and save new
-jobs**, inspect the JSON preview, and select **Approve and save** to add them to
-local history. Canceling leaves the file unchanged.
+Live search results appear before they are saved. Select **Review and save N
+job updates** (where N is the number of new or enriched leads), inspect the JSON
+preview, and select **Approve and save** to save them to local history.
+Canceling leaves the file unchanged.
 
 Sponsorship starts as `unclear` unless the source explicitly provides evidence.
 Read the original posting before applying.

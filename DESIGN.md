@@ -14,10 +14,12 @@ The assistant can:
 - find matching jobs on public university career pages;
 - capture the source URL and the sponsorship evidence it found;
 - detect application confirmations and status changes from relevant emails;
-- track applications, statuses, and seven-day follow-up reminders;
-- find public professional contact information for a hiring team;
-- draft outreach and follow-up emails; and
-- maintain an outreach history so the same person is not contacted twice.
+- track applications, statuses, and seven-day follow-up reminders; and
+- maintain an outreach history with duplicate-email checks for manually sent
+  messages.
+
+Finding hiring-team contacts and drafting or sending outreach are planned
+extensions.
 
 The assistant does not assume that a discovered job has been applied to. It
 does not claim that sponsorship is available when the source is unclear. It
@@ -33,9 +35,10 @@ showing the proposed action and receiving explicit approval.
 - Deadline (YYYY-MM-DD; today or a future date)
 - Weekly availability in hours
 
-### Approval gates
+### Approval policy
 
-The following actions always require confirmation:
+The design requires confirmation for the following actions, including future
+features:
 
 - adding an application detected from email;
 - changing an application status or notes;
@@ -47,7 +50,10 @@ The following actions always require confirmation:
 Before an approved write, the assistant shows the exact fields that will be
 saved. Before an approved email, it shows the recipient, subject, and complete
 message. It accepts `yes`, `confirm`, or `save` for data writes and `send` for
-email. An unclear response such as `maybe` causes another prompt.
+email in a future sending workflow. The current CLI accepts the data-write
+responses; an unclear response such as `maybe` causes another prompt. The
+dashboard uses **Approve and save** and **Cancel** buttons. Application deletion
+and email sending are not implemented.
 
 Reading data, searching public job pages, calculating reminders, checking for
 duplicate contacts, and displaying summaries do not require approval.
@@ -101,7 +107,8 @@ Each outreach entry contains:
 - `follow_up_date`
 
 Email addresses are stored in lowercase for duplicate checks. A previous entry
-blocks another send unless the user explicitly approves an override.
+blocks a duplicate outreach record. Sending and approval of repeat-contact
+overrides remain future features.
 
 ### Session state
 
@@ -149,11 +156,11 @@ write succeeds. The CLI reports the path after each successful save.
 The automated suite covers the normal application workflow, empty university
 names, unsupported statuses, past deadlines, unclear approval responses,
 cancelled changes, approved persistence, unapproved storage calls, and invalid
-JSON. The README explains setup, usage, an example interaction, privacy, and
+JSON. The README explains setup, usage, the current workflow, privacy, and
 current limitations. The reflection connects helper functions, session state,
 long-term memory, and approval gates to larger agentic systems.
 
-## Planned extensions
+## Implemented milestones and remaining extensions
 
 ### Dashboard milestone
 
@@ -182,8 +189,9 @@ U.S. universities. It filters target early-career technology titles, rejects
 senior and management titles, normalizes dates, and deduplicates by original
 posting URL. The dashboard starts discovery when the Jobs page opens and caches
 results for 30 minutes. It provides age, university, role-group, and text
-filters; structured cards; source description excerpts; requirements; direct
-posting links; and an approval gate before new leads are written to local JSON.
+filters; structured cards; source description excerpts; requirements; whole-card
+links opening original postings in a new tab; and an approval gate before new
+or enriched leads are written to local JSON.
 Job charts are displayed on the home dashboard. Job leads are not exported as
 CSV.
 

@@ -178,6 +178,14 @@ email address is the duplicate-check key.
 One source failure does not discard successful sources. The Jobs page lists each
 source error in an expandable warning.
 
+`dashboard._render_job_card` renders each complete card as one native HTML link
+through `st.html`. The link uses the lead's original `job_url`, opens a new tab,
+and supports keyboard navigation with a visible focus outline. Source text and
+HTML attributes are escaped; only absolute HTTP(S) URLs with a hostname become
+links. Missing or invalid URLs produce a readable, non-clickable card. Links
+use `rel="noopener noreferrer"`. Opening a posting does not write tracker data
+or create an application.
+
 Workday exposes relative dates such as `Posted Today` and `Posted 3 Days Ago`.
 The parser converts those values relative to scan time. Dates marked `30+ Days`
 are represented as 30 days before the scan and should be treated as approximate.
